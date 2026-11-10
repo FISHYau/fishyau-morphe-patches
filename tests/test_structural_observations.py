@@ -35,6 +35,19 @@ def timing(event):
     return dict(started_at=event, ended_at=event, elapsed_ns=1)
 
 
+def synthetic_interpreter(root, stack):
+    """Canonical nonexecutable placeholder; callers must mock every subprocess.
+
+    Patching o.sys also changes the process-wide sys module until stack closes.
+    """
+    path = root / "python-NONEXECUTABLE.fixture"
+    path.write_bytes(b"SYNTHETIC INTERPRETER PLACEHOLDER; NEVER EXECUTE")
+    path.chmod(0o600)
+    path = si.canonical(path)
+    stack.enter_context(mock.patch.object(o.sys, "executable", str(path)))
+    return path
+
+
 class StructuralFixture:
     def __init__(self, root, identity, source, catalog, bundle, bound, event=EVENT):
         self.root, self.identity, self.source, self.catalog, self.bundle, self.bound = root, identity, source, catalog, bundle, bound
@@ -370,15 +383,48 @@ class GuardContracts(unittest.TestCase):
                 else: self.assertEqual(row["exit_code"], 7)
 
     def test_closure_attempts_all_categories_after_one_probe_fails(self):
-        with mock.patch.object(si, "snapshot_selection", side_effect=ValueError("bad member")), \
-             mock.patch.object(o.f, "pristine_tree", return_value=("hash", [])) as source, \
-             mock.patch.object(o, "strict_tree_paths"), mock.patch.object(o, "tool_snapshot", return_value={}) as tools, \
-             mock.patch.object(si, "record", return_value={}) as files:
+        with tempfile.TemporaryDirectory(prefix="closure-interpreter-ONLY-") as scratch, ExitStack() as stack:
+            child = stack.enter_context(mock.patch.object(o.subprocess, "run", side_effect=AssertionError("NEVER EXECUTE")))
+            interpreter = synthetic_interpreter(Path(scratch).resolve(), stack)
+            self.assertTrue(stat.S_ISREG(interpreter.stat().st_mode))
+            self.assertFalse(interpreter.stat().st_mode & 0o111)
+            selection = stack.enter_context(mock.patch.object(si, "snapshot_selection", side_effect=ValueError("bad member")))
+            source = stack.enter_context(mock.patch.object(o.f, "pristine_tree", return_value=("hash", [])))
+            stack.enter_context(mock.patch.object(o, "strict_tree_paths"))
+            tools = stack.enter_context(mock.patch.object(o, "tool_snapshot", return_value={}))
+            files = stack.enter_context(mock.patch.object(si, "record", return_value={}))
             result = o.identity_closure({}, dict(jdk=REPO, runtime=[], compiler=[]), [], Path("request"), Path("bundle"), Path("catalog"), Path("out"), {})
-        self.assertTrue(result["errors"])
+        self.assertEqual(result["errors"], ["selection: ValueError: bad member"])
+        selection.assert_called_once_with({})
         source.assert_called_once()
         tools.assert_called_once()
         self.assertEqual(files.call_count, 4)
+        child.assert_not_called()
+
+    def test_original_interpreter_symlink_is_rejected_before_tool_snapshot(self):
+        with tempfile.TemporaryDirectory(prefix="closure-interpreter-link-ONLY-") as scratch, ExitStack() as stack:
+            root = Path(scratch).resolve()
+            child = stack.enter_context(mock.patch.object(o.subprocess, "run", side_effect=AssertionError("NEVER EXECUTE")))
+            interpreter = synthetic_interpreter(root, stack)
+            link = root / "python-link.fixture"
+            try:
+                link.symlink_to(interpreter)
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest("symlink creation unavailable: " + str(exc))
+            # Keep the original link spelling: resolving here would hide the bug.
+            stack.enter_context(mock.patch.object(o.sys, "executable", str(link)))
+            selection = stack.enter_context(mock.patch.object(si, "snapshot_selection", return_value={}))
+            source = stack.enter_context(mock.patch.object(o.f, "pristine_tree", return_value=("hash", [])))
+            stack.enter_context(mock.patch.object(o, "strict_tree_paths"))
+            tools = stack.enter_context(mock.patch.object(o, "tool_snapshot", return_value={}))
+            files = stack.enter_context(mock.patch.object(si, "record", return_value={}))
+            result = o.identity_closure({}, dict(jdk=REPO, runtime=[], compiler=[]), [], Path("request"), Path("bundle"), Path("catalog"), Path("out"), {})
+        self.assertEqual(result["errors"], ["tools: ValueError: reparse/link ancestry forbidden"])
+        selection.assert_called_once_with({})
+        source.assert_called_once()
+        tools.assert_not_called()
+        self.assertEqual(files.call_count, 4)
+        child.assert_not_called()
 
 
 class SelectedOrchestrationContracts(unittest.TestCase):
@@ -418,6 +464,7 @@ class SelectedOrchestrationContracts(unittest.TestCase):
         self.stack.enter_context(mock.patch.object(o, "adapt_inspection", return_value={"mock_contract": True}))
         self.stack.enter_context(mock.patch.object(o, "adapt_plex", return_value={}))
         self.child = self.stack.enter_context(mock.patch.object(o.subprocess, "run", side_effect=self.respond))
+        self.interpreter = synthetic_interpreter(self.base, self.stack)
 
     def respond(self, argv, **kwargs):
         if "--scope" in argv:
