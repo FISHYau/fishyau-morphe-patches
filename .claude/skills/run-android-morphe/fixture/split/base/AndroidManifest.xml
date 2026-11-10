@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.morphe.splitfixture" android:versionCode="1" android:versionName="1.0"
+    android:isSplitRequired="true" android:requiredSplitTypes="base__abi,base__density">
+    <uses-sdk android:minSdkVersion="27" android:targetSdkVersion="30" />
+    <application android:label="Split fixture" android:hasCode="true"
+        android:extractNativeLibs="false" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

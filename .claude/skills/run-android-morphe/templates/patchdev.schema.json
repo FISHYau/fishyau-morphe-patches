@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Offline patch development configuration",
+  "description": "Use the matching $defs schema for the CLI command. All paths must be explicit absolute paths; outputs must be NEW and external. Patch/assertion/test code is trusted executable code, never sandboxed by hashes. The fixture source is a complete standalone example to copy externally and adapt; cache-closure.json is its exact offline dependency contract. No Gradle/collection plugin or downloads are used.",
+  "$defs": {
+    "hashRecord": {
+      "type": "object", "required": ["path", "sha256"], "additionalProperties": false,
+      "properties": {"path": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+    },
+    "fixture-build": {
+      "type": "object", "required": ["jdk", "sdk", "out"], "additionalProperties": false,
+      "properties": {"jdk": {"type": "string"}, "sdk": {"type": "string"}, "out": {"type": "string"}}
+    },
+    "patch-build": {
+      "type": "object", "additionalProperties": false,
+      "required": ["trusted_code", "jdk", "cache_root", "out", "sources", "tests", "assertion_class", "test_class"],
+      "properties": {
+        "trusted_code": {"const": true}, "jdk": {"type": "string"}, "cache_root": {"type": "string"}, "out": {"type": "string"},
+        "sources": {"type": "array", "minItems": 1, "maxItems": 100, "uniqueItems": true, "items": {"type": "string"}},
+        "tests": {"type": "array", "minItems": 1, "maxItems": 100, "uniqueItems": true, "items": {"type": "string"}},
+        "assertion_class": {"type": "string"}, "test_class": {"type": "string"}
+      }
+    },
+    "verification": {
+      "type": "object", "additionalProperties": false,
+      "required": ["aapt2", "signer_jar", "expect_package", "expect_version_code", "expect_version_name", "expect_signer", "abi", "density", "language"],
+      "properties": {
+        "aapt2": {"type": "string"}, "signer_jar": {"type": "string"}, "expect_package": {"type": "string"},
+        "expect_version_code": {"type": "string"}, "expect_version_name": {"type": "string"},
+        "expect_signer": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}},
+        "abi": {"enum": ["none", "arm64-v8a", "armeabi-v7a", "x86", "x86_64", "riscv64"]}, "density": {"type": "string"}, "language": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+      }
+    },
+    "apply": {
+      "type": "object", "additionalProperties": false,
+      "required": ["trusted_code", "jdk", "cache_root", "out", "patcher_version", "apks", "bundle", "runner", "assertion_class", "assertion_sha256", "patches", "options", "verification", "source_hashes"],
+      "properties": {
+        "trusted_code": {"const": true}, "jdk": {"type": "string"}, "cache_root": {"type": "string"}, "out": {"type": "string"},
+        "patcher_version": {"const": "2.3.0"},
+        "input_mode": {"enum": ["standalone", "base_config_set"], "default": "standalone"},
+        "allow_dex_layout_change": {"type": "boolean", "default": false},
+        "logical_container": {"type": "object", "additionalProperties": false,
+          "required": ["type", "path", "sha256"], "properties": {"type": {"const": "APKM"},
+            "path": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+        "base": {"$ref": "#/$defs/hashRecord"},
+        "apks": {"type": "array", "minItems": 1, "maxItems": 256},
+        "bundle": {"$ref": "#/$defs/hashRecord"}, "runner": {"$ref": "#/$defs/hashRecord"},
+        "assertion_class": {"type": "string"}, "assertion_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "patches": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 200}},
+        "options": {"type": "object", "maxProperties": 0}, "verification": {"$ref": "#/$defs/verification"},
+        "source_hashes": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/hashRecord"}}
+      },
+      "allOf": [{"if": {"required": ["input_mode"], "properties": {"input_mode": {"const": "base_config_set"}}},
+        "then": {"required": ["logical_container", "base"], "properties": {
+          "apks": {"minItems": 2, "uniqueItems": true, "items": {"type": "object", "additionalProperties": false,
+            "required": ["path", "sha256", "archive_member"], "properties": {"path": {"type": "string"},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "archive_member": {"type": "string"}}}}}},
+        "else": {"not": {"anyOf": [{"required": ["logical_container"]}, {"required": ["base"]}]},
+          "properties": {"apks": {"maxItems": 1, "items": {"$ref": "#/$defs/hashRecord"}},
+            "verification": {"properties": {"abi": {"const": "none"}}}}}}]
+    }
+  }
+}

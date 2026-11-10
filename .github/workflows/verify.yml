@@ -1,0 +1,217 @@
+name: Verify source
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      produce_candidate:
+        description: Snapshot an existing staged candidate (no build or publication)
+        type: boolean
+        default: false
+      candidate_sha256:
+        description: Exact five-file candidate seal (not an archive digest)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  # Candidate dispatches cannot cancel/be cancelled by ordinary verification or
+  # another producer dispatch. Failed attempts are retained, never rerun/reused.
+  group: verify-${{ github.event_name == 'workflow_dispatch' && inputs.produce_candidate && format('candidate-{0}', github.run_id) || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !(github.event_name == 'workflow_dispatch' && inputs.produce_candidate) }}
+
+jobs:
+  offline:
+    # Fork PRs run only synthetic/offline tests; no package token or environment.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact event revision without persisted credentials
+        # actions/checkout v4.2.2, pinned immutable upstream commit.
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Test all discovered release and staging contracts without bytecode caches
+        run: python3 -I -B -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Test and check publication boundary before any build outputs exist
+        run: |
+          python3 -I -B tools/test_scaffold.py
+          python3 -I -B tools/check_scaffold.py
+      - name: Run every canonical offline Android tooling suite
+        run: python3 -I -B .claude/skills/run-android-morphe/test_all.py
+
+  collection:
+    needs: offline
+    # Opt in only after environment protection and cross-repository read access to
+    # the pinned Morphe GitHub Packages have actually been provisioned/tested.
+    # A GITHUB_TOKEN with packages:read is NOT automatically granted that access.
+    # No PR event (including same-repository PRs) may reach package credentials.
+    if: >-
+      github.repository == 'FISHYau/fishyau-morphe-patches' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      vars.MORPHE_PACKAGES_READ_READY == 'true'
+    environment: collection-build
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out trusted main revision without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Build Android collection in a new external source copy using runner JDK 21
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          test -n "${JAVA_HOME_21_X64:-}"
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          run=$(mktemp -d "$RUNNER_TEMP/morphe-collection-XXXXXXXX")
+          mkdir "$run/source" "$run/gradle" "$run/evidence" "$run/tmp" "$run/home"
+          export GRADLE_USER_HOME="$run/gradle" TMPDIR="$run/tmp" HOME="$run/home"
+          unset JAVA_TOOL_OPTIONS _JAVA_OPTIONS JDK_JAVA_OPTIONS CLASSPATH KOTLIN_HOME
+          # Copy first. Never execute Gradle or create build/cache/evidence in checkout.
+          tar -C "$GITHUB_WORKSPACE" --exclude=.git --exclude=.gradle --exclude=build --exclude=local.properties -cf "$run/source.tar" .
+          tar -C "$run/source" -xf "$run/source.tar"
+          cd "$run/source"
+          java -version
+          gradle() {
+            bash ./gradlew --no-daemon --max-workers=4 --no-build-cache --stacktrace \
+              -PpublicationRepository=FISHYau/fishyau-morphe-patches -Pversion=0.1.0 "$@"
+          }
+          # Failure logs/partial outputs remain in this run; no retry or cache restore.
+          gradle --rerun-tasks :patches:test :patches:buildAndroid > "$run/evidence/build.log" 2>&1
+          mapfile -d '' bundles < <(find "$run/source" -type f -path '*/build/*' -name '*.mpp' -print0)
+          test "${#bundles[@]}" -eq 1
+          bundle="${bundles[0]}"
+          test -s "$bundle"
+          sha256sum "$bundle" > "$run/evidence/final-mpp.sha256"
+          # Generator consumes already compiled classes and this exact final MPP.
+          # Its task classpath deliberately has no compilation/build task edges.
+          gradle :patches:generatePatchesList "-PcatalogBundle=$bundle" \
+            "-PcatalogOutput=$run/evidence/patches-list.json" > "$run/evidence/catalog.log" 2>&1
+          sha256sum --check "$run/evidence/final-mpp.sha256"
+          python3 -I -B - "$run" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          import xml.etree.ElementTree as ET
+          run = Path(sys.argv[1])
+          reports = sorted((run / 'source/patches/build/test-results/test').glob('*.xml'))
+          if not reports:
+              raise SystemExit('No collection JUnit XML was produced')
+          counts = dict(tests=0, failures=0, errors=0, skipped=0)
+          for report in reports:
+              root = ET.parse(report).getroot()
+              if root.tag != 'testsuite':
+                  raise SystemExit('Unexpected JUnit root')
+              for key in counts:
+                  counts[key] += int(root.attrib.get(key, '0'))
+          if counts['tests'] <= counts['skipped'] or counts['failures'] or counts['errors']:
+              raise SystemExit('Collection tests did not execute successfully')
+          catalog = json.loads((run / 'evidence/patches-list.json').read_text())
+          if catalog.get('version') != '0.1.0' or not catalog.get('patches'):
+              raise SystemExit('Missing catalog entries or mismatched version')
+          (run / 'evidence/tests.json').write_text(json.dumps(counts, indent=2))
+          print(json.dumps(counts))
+          PY
+      # No artifact upload, channel manifest, release or publishing credentials.
+      # Build success is not target-patcher/runtime/Manager verification or approval.
+      # Registry prerequisites and protected environment must be set up later;
+      # leaving MORPHE_PACKAGES_READ_READY unset intentionally skips this job.
+
+  candidate:
+    needs: offline
+    # Source-only integration until maintainers provision this dedicated trusted
+    # runner, protected environment and external sanitized staged-candidate root.
+    if: >-
+      github.repository == 'FISHYau/fishyau-morphe-patches' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.workflow_ref == 'FISHYau/fishyau-morphe-patches/.github/workflows/verify.yml@refs/heads/main' &&
+      github.workflow_sha == github.sha &&
+      github.run_attempt == 1 &&
+      inputs.produce_candidate == true &&
+      vars.MORPHE_CANDIDATE_PRODUCER_READY == 'true'
+    runs-on: [self-hosted, linux, morphe-candidate]
+    environment: candidate-staging
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    outputs:
+      artifact_run: ${{ github.run_id }}
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      artifact_sha256: ${{ steps.upload.outputs.artifact-digest }}
+      candidate_sha256: ${{ steps.snapshot.outputs.candidate_sha256 }}
+      source_commit: ${{ steps.snapshot.outputs.source_commit }}
+    steps:
+      - name: Check out exact source commit without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Validate and freeze existing sanitized five-file candidate (no rebuild)
+        id: snapshot
+        env:
+          PRODUCE_CANDIDATE: ${{ inputs.produce_candidate }}
+          CANDIDATE_SHA256: ${{ inputs.candidate_sha256 }}
+          MORPHE_CANDIDATE_PRODUCER_READY: ${{ vars.MORPHE_CANDIDATE_PRODUCER_READY }}
+          MORPHE_CANDIDATE_ROOT: ${{ vars.MORPHE_CANDIDATE_ROOT }}
+        run: python3 -I -B tools/release/candidate.py ci
+      - name: Upload only frozen sanitized candidate files
+        id: upload
+        # actions/upload-artifact v4.6.2, immutable archive; not a release.
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-candidate-0.1.0
+          path: |
+            ${{ steps.snapshot.outputs.path }}/patches-0.1.0.mpp
+            ${{ steps.snapshot.outputs.path }}/patches-list.json
+            ${{ steps.snapshot.outputs.path }}/patches-bundle.candidate.json
+            ${{ steps.snapshot.outputs.path }}/verification-summary.json
+            ${{ steps.snapshot.outputs.path }}/SHA256SUMS
+          overwrite: false
+          if-no-files-found: error
+          retention-days: 3
+      - name: Report actual upload identity separately from candidate seal
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_SHA256: ${{ steps.upload.outputs.artifact-digest }}
+          CANDIDATE_SHA256: ${{ steps.snapshot.outputs.candidate_sha256 }}
+          SOURCE_COMMIT: ${{ steps.snapshot.outputs.source_commit }}
+        run: |
+          python3 -I -B - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+          value = dict(status='uploaded-not-published', artifact_run=os.environ['GITHUB_RUN_ID'],
+                       artifact_id=os.environ['ARTIFACT_ID'], artifact_sha256=os.environ['ARTIFACT_SHA256'],
+                       candidate_sha256=os.environ['CANDIDATE_SHA256'], source_commit=os.environ['SOURCE_COMMIT'])
+          for key in ('artifact_run', 'artifact_id'):
+              if not re.fullmatch(r'[1-9][0-9]*', value[key]):
+                  raise SystemExit('Missing actual run/artifact identity')
+          for key in ('artifact_sha256', 'candidate_sha256'):
+              if not re.fullmatch(r'[0-9a-f]{64}', value[key]):
+                  raise SystemExit('Missing actual digest/seal')
+          if value['source_commit'] != os.environ['GITHUB_SHA']:
+              raise SystemExit('Source identity changed')
+          report = json.dumps(value, sort_keys=True)
+          print(report)
+          with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a', encoding='utf-8') as handle:
+              handle.write('Candidate upload receipt (not publication or evidence authentication)\n\n```json\n' + report + '\n```\n')
+          PY
+      # No release dispatch, live manifest, raw evidence or publication credential.

@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.morphe.splitfixture" android:versionCode="1" split="config.@SPLIT_ABI@"
+    android:isFeatureSplit="false" android:splitTypes="base__abi">
+    <!-- Deliberately no companion versionName. -->
+    <uses-sdk android:minSdkVersion="27" android:targetSdkVersion="30" />
+    <application android:hasCode="false" android:extractNativeLibs="false" />
+</manifest>

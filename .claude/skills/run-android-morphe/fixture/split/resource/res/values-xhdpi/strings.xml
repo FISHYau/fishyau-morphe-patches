@@ -1,0 +1,4 @@
+<resources>
+    <!-- Same stable resource ID as base; this density configuration lives ONLY here. -->
+    <string name="split_probe">SPLIT_RESOURCE_OK</string>
+</resources>

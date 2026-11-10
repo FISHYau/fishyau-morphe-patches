@@ -1,0 +1,11 @@
+# Keep text checkouts deterministic, including byte-pinned migrated sources.
+* text=auto eol=lf
+*.sh text eol=lf
+gradlew text eol=lf
+gradlew.bat text eol=crlf
+*.jar binary
+# Preserve exact upstream legal bytes and their recorded SHA-256 provenance.
+LICENSE -text
+NOTICE -text
+patches/src/main/kotlin/io/github/fishyau/androidpatches/plex/LICENSE -text
+patches/src/main/kotlin/io/github/fishyau/androidpatches/plex/NOTICE -text

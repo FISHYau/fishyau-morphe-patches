@@ -1,0 +1,45 @@
+# Build/tool state is never publication source
+.gradle/
+**/build/
+**/__pycache__/
+*.py[cod]
+.idea/
+.vscode/
+local.properties
+.android-morphe/
+.android/
+.cache/
+# Proprietary inputs, extracted app trees, generated device evidence
+labs/
+inputs/
+extracted/
+evidence/
+output/
+outputs/
+*.apk
+*.apkm
+*.apks
+*.aab
+*.dex
+*.mpp
+*.mpe
+*.so
+*.dylib
+*.dll
+*.exe
+*.zip
+*.7z
+*.jks
+*.keystore
+*.p12
+*.pem
+.env
+.env.*
+!.env.example
+# Only the reviewed Gradle wrapper JAR is source infrastructure
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+# Local credentials and generated signing material
+/gradle.properties.local
+morphe-signing.*
+*.asc

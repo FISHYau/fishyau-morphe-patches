@@ -1,0 +1,107 @@
+name: Reviewed candidate release
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Prepare verifies immutable server artifact and source (no writes); publish requires protected independent evidence review
+        type: choice
+        options: [prepare, publish]
+        default: prepare
+        required: true
+      target:
+        description: Explicit publication owner/repository
+        type: string
+        required: true
+      version:
+        description: Exact candidate version (0.1.0)
+        type: string
+        required: true
+      candidate_sha256:
+        description: SHA256 of canonical exact staged filename-to-digest inventory
+        type: string
+        required: true
+      artifact_run:
+        description: Exact immutable candidate-producing Actions run ID (never latest)
+        type: string
+        required: true
+      artifact_id:
+        description: Exact immutable candidate artifact ID (never name-only)
+        type: string
+        required: true
+      artifact_sha256:
+        description: SHA256 of exact immutable artifact archive, distinct from candidate seal
+        type: string
+        required: true
+      source_commit:
+        description: Actual clean full source commit; must equal this main workflow revision
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stable-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'FISHYau/fishyau-morphe-patches' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.source_commit == github.sha
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Check out exact trusted approved source (not artifact executable code)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Offline contract tests
+        run: |
+          python3 -I -B -m unittest discover -s tests -p 'test_release.py' -v
+          python3 -I -B -m unittest discover -s tests -p 'test_staging.py' -v
+          python3 -I -B -m unittest discover -s tests -p 'test_publisher.py' -v
+      - name: Verify exact server artifact and staged source without write credentials
+        env:
+          # Publish dispatch also gets a read-only prepare pass first.
+          HANDOFF: ${{ toJSON(inputs) }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 -I -B -c 'import json,os,runpy; value=json.loads(os.environ["HANDOFF"]); value["mode"]="prepare"; os.environ["HANDOFF"]=json.dumps(value); runpy.run_path("tools/release/workflow_handoff.py",run_name="__main__")'
+
+  publish:
+    needs: prepare
+    if: github.repository == 'FISHYau/fishyau-morphe-patches' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.source_commit == github.sha && inputs.mode == 'publish'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # MAINTAINER PREREQUISITE, NOT CLAIMED CONFIGURED. Required individual human
+    # reviewers, prevent self-review, no admin bypass, custom main-only policy.
+    # Approval comment: evidence-policy-reviewed binding-sha256=<dispatch seal>.
+    # The transport verifies actual settings + run/review APIs + trusted context;
+    # environment name or approval JSON alone never authenticates publication.
+    environment: release
+    # Default Actions token remains read-only. The protected environment must
+    # provision a repository-scoped publish credential with Contents:write,
+    # Actions:read and Administration:read (actual branch-protection inspection).
+    # This secret NAME is not a secret value and no credential is retrieved here.
+    permissions:
+      contents: read
+    steps:
+      - name: Check out same exact trusted approved source without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Authenticate review and publish approved bytes, manifest LAST
+        env:
+          HANDOFF: ${{ toJSON(inputs) }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PUBLISH_TOKEN }}
+        run: python3 -I -B tools/release/workflow_handoff.py
+      # No rebuild, artifact-supplied executables, secret retrieval, force or retry.
+      # Immutable release support and immutable candidate producer setup are later
+      # maintainer prerequisites; unsupported/missing settings fail honestly.

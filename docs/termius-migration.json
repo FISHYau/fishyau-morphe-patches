@@ -1,0 +1,105 @@
+{
+  "schema": 1,
+  "kind": "termius-source-migration",
+  "namespace": "io.github.fishyau.androidpatches.termius",
+  "scope": "exactly the two Server Auditor patches; no donor registry or unrelated implementations",
+  "entries": [
+    {
+      "donor": "patches/src/main/kotlin/app/template/patches/serverauditor/premium/ServerAuditorOfflineAutomationPatch.kt",
+      "migrated": "patches/src/main/kotlin/io/github/fishyau/androidpatches/termius/ServerAuditorOfflineAutomationPatch.kt",
+      "original_sha256": "72cc4c82755123e2f669be776310c57b665aba14c9a106c4e40fa4fcd66b12f5",
+      "migrated_sha256": "4226b2eef29b4e4cc8eba29f09ff6c6928f87a823d21cfd7bcca158359ad4ba4",
+      "modifications": ["package namespace only", "remove shared import; use isolated same-package equivalent"]
+    },
+    {
+      "donor": "patches/src/main/kotlin/app/template/patches/serverauditor/premium/ServerAuditorPremiumPatch.kt",
+      "migrated": "patches/src/main/kotlin/io/github/fishyau/androidpatches/termius/ServerAuditorPremiumPatch.kt",
+      "original_sha256": "6b200733bc869e88fe959e19c98750bb4a3a3730264f8d6386df3fa30575f736",
+      "migrated_sha256": "a4c949ceac08afed93d496f92d4c8f7726014854bc1d0366f4b36ba1bc3238fa",
+      "modifications": ["package namespace only", "remove shared import; use isolated same-package equivalent", "remove shared import; use isolated same-package equivalent", "2026-11-09 explicit user request: Premium default false -> true only; algorithms/guards/compatibility unchanged"]
+    },
+    {
+      "donor": "patches/src/main/kotlin/app/template/patches/serverauditor/premium/Fingerprints.kt",
+      "migrated": "patches/src/main/kotlin/io/github/fishyau/androidpatches/termius/Fingerprints.kt",
+      "original_sha256": "22ed450db3bb8bb242ee6f50025f546675e2d05298f14cab7ecd9d093492cbb4",
+      "migrated_sha256": "6230ace4174c599ea8f3c698d92dedfa51238ee01d23586f4b55c43b53d834b6",
+      "modifications": ["package namespace only"]
+    },
+    {
+      "donor": "patches/src/main/kotlin/app/template/patches/serverauditor/premium/BytecodeLayout.kt",
+      "migrated": "patches/src/main/kotlin/io/github/fishyau/androidpatches/termius/BytecodeLayout.kt",
+      "original_sha256": "be52815c62aba834cfbc78cbb4be4a5037655b63ce850e3c479c5359cb8706df",
+      "migrated_sha256": "415ded2b5b2dd96d4f4100346e330e39cc3aa85f339337f3f5722392656f9d7c",
+      "modifications": ["package namespace only"]
+    },
+    {
+      "donor": "patches/src/main/kotlin/app/template/patches/serverauditor/premium/OfflineAutomationValidation.kt",
+      "migrated": "patches/src/main/kotlin/io/github/fishyau/androidpatches/termius/OfflineAutomationValidation.kt",
+      "original_sha256": "67d280d172ac992d0e38d93629da174be873a592e7edc8db046478edce730116",
+      "migrated_sha256": "915e0fbf16822e54052decb5efe25c4dbcfaf16f7235eb96e499f442f804f14d",
+      "modifications": ["package namespace only"]
+    },
+    {
+      "donor": "patches/src/main/kotlin/app/template/patches/serverauditor/premium/PremiumPatchValidation.kt",
+      "migrated": "patches/src/main/kotlin/io/github/fishyau/androidpatches/termius/PremiumPatchValidation.kt",
+      "original_sha256": "5baed68795dec3aedf95f766f772142ff8acce89fa415e3299982dc56f5aab1b",
+      "migrated_sha256": "8e592471f3cddb5182ef4384a5624c6cf901769854e0ac88ca9252df0f7f6a67",
+      "modifications": ["package namespace only"]
+    },
+    {
+      "donor": "patches/src/test/kotlin/app/template/patches/serverauditor/premium/OfflineAutomationValidationTest.kt",
+      "migrated": "patches/src/test/kotlin/io/github/fishyau/androidpatches/termius/OfflineAutomationValidationTest.kt",
+      "original_sha256": "4ea65e60b2282070713d2468d54866f003ff4f2dc514269c90748227fb64996b",
+      "migrated_sha256": "1f14e4a9b9d1d7668fa7448452af3a0cc0e6a7a8a27674ba44d7611775bae8e1",
+      "modifications": ["package namespace only"]
+    },
+    {
+      "donor": "patches/src/test/kotlin/app/template/patches/serverauditor/premium/PremiumPatchValidationTest.kt",
+      "migrated": "patches/src/test/kotlin/io/github/fishyau/androidpatches/termius/PremiumPatchValidationTest.kt",
+      "original_sha256": "a72e766026d877744189731a1050676a29fe034b378015c07201b0b4e5160540",
+      "migrated_sha256": "905b66f0a604e1209d6d14de4c8c1fd6b5fce1653ad877976e1fb3bca707d167",
+      "modifications": ["package namespace only"]
+    },
+    {
+      "donor": "patches/src/main/kotlin/app/template/patches/shared/Constants.kt",
+      "migrated": "patches/src/main/kotlin/io/github/fishyau/androidpatches/termius/Compatibility.kt",
+      "original_sha256": "6fd9e5085ad9ae26d968ac8089f0c461c99c4ee2c5450d4a032d5c9e2259ed5f",
+      "original_fragment_sha256": "0f5bbd0de4a65f0dd6e698fca17a3a2e0e24f5a91f0a651770d4319721759a01",
+      "migrated_sha256": "4b0cf89d440c9106badb2f895d8480cc6aef792de704081e714d1c51b1a451f0",
+      "modifications": ["extract only SERVER_AUDITOR_COMPATIBILITY", "package/import isolation and internal visibility; exact values unchanged"]
+    },
+    {
+      "donor": "patches/src/main/kotlin/app/template/patches/shared/BytecodeUtils.kt",
+      "migrated": "patches/src/main/kotlin/io/github/fishyau/androidpatches/termius/BooleanReturn.kt",
+      "original_sha256": "0d4f024dbc9416a453ed30423b6c6487397c5d03d0ec0da8e478349b52583a65",
+      "original_notice_sha256": "25bd902663085dd32458fd8c0904941923fc48fc2313055503014bf0c868abae",
+      "migrated_sha256": "86141faca95ccaf795835c3d771d641f6581f81955d099e6c110a797d20e3c56",
+      "modifications": ["preserve complete applicable Morphe/ReVanced notice", "focused returnEarly(false): same Z type check and prepend const/4 v0,0 then return v0; no register growth", "reject unneeded true argument; remove unrelated overloads/helpers; namespace/import isolation"]
+    }
+  ],
+  "original_source_sha256": "9a1f72ff0ed5a666f3d2a136514880670cf0158e993f87da1164fcc11b035b60",
+  "migrated_source_sha256": "b7e223ed4f87ce4b80d9617b9a694a4b1fc74c69763f63f12952053dc7b18d5c",
+  "inherited_validator_cases": {"offline_automation": 39, "premium_storage": 27},
+  "accepted_existing_behavior": {
+    "basis": "User confirmed these two patches tested and working; not a new observation by this migration audit",
+    "defaults_scope": "Original donor defaults before the separately recorded explicit user-requested default-selection adaptation",
+    "patches": [
+      {"name": "Server Auditor Offline Automation", "default": true},
+      {"name": "Server Auditor Premium", "default": false}
+    ],
+    "compatibility": {"package": "com.server.auditor.ssh.client", "version": "8.0.1", "version_code": 1008, "container": "APKM"},
+    "new_android_runtime_or_manager_import_claimed": false
+  },
+  "default_selection_adaptation": {
+    "date": "2026-11-09",
+    "basis": "explicit-user-request",
+    "request": "Both Termius patches should be enabled by default.",
+    "patch": "Server Auditor Premium",
+    "original_default": false,
+    "current_default": true,
+    "scope": "Default-selection metadata only; donor algorithms, guards, descriptions and compatibility unchanged; Offline Automation remains true",
+    "combined_android_runtime_acceptance_claimed": false
+  },
+  "hash_contract": "File SHA-256 is exact bytes. Source-set digests hash termius-migration-v1 NUL then sorted migrated-path NUL file-digest LF; original set uses full donor files, including extracted utilities.",
+  "limitations": ["Mechanical equality check normalizes CRLF to LF; file hashes do not", "Helper equivalence requires source review and structural checks", "Not an MPP build, Android load, release approval or publication"]
+}

@@ -1,0 +1,93 @@
+{
+  "schema": 1,
+  "date": "2026-11-09",
+  "source_repository": "https://github.com/UnkyBadTouch/plex-morphe-patches.git",
+  "source_revision": "38f05e52d57bdc68c55f9ca6ae0b0c7b1d08b06f",
+  "files": [
+    {
+      "original_path": "patches/src/main/kotlin/app/plexmods/patches/PremiumUnlockPatch.kt",
+      "original_sha256": "9c266b6d1cad2ad21a20a62a387be37d274b90d01ba7a7479c2984b368f643d5",
+      "migrated_path": "patches/src/main/kotlin/io/github/fishyau/androidpatches/plex/PremiumUnlockPatch.kt",
+      "migrated_sha256": "90b687f63c4327476a73355de4c0a3fd7f590c161937d0ccd9a1a0086a6f43e3",
+      "transformations": [
+        "Prepend GPL/provenance/modification notice dated 2026-11-09",
+        "Replace package/import prefix app.plexmods.patches with io.github.fishyau.androidpatches.plex",
+        "Replace only the patch description to avoid server entitlement or universal-device guarantees"
+      ]
+    },
+    {
+      "original_path": "patches/src/main/kotlin/app/plexmods/patches/shared/HermesBytecode.kt",
+      "original_sha256": "5ba7ec4682cf759c6838ba2c1cb8bf4a1fb1e5b11b80da59d9e7f744a30cf7e0",
+      "migrated_path": "patches/src/main/kotlin/io/github/fishyau/androidpatches/plex/shared/HermesBytecode.kt",
+      "migrated_sha256": "4f490a527f26df757214f4dba3c17e3782cedd7498c1a8554db65d1bcdf8a909",
+      "transformations": [
+        "Prepend GPL/provenance/modification notice dated 2026-11-09",
+        "Replace package/import prefix app.plexmods.patches with io.github.fishyau.androidpatches.plex"
+      ]
+    },
+    {
+      "original_path": "patches/src/main/kotlin/app/plexmods/patches/shared/Constants.kt",
+      "original_sha256": "95f4a1c0846d625823cd33022572fc4821f7128d81347d54359c840f4273b763",
+      "migrated_path": "patches/src/main/kotlin/io/github/fishyau/androidpatches/plex/shared/Constants.kt",
+      "migrated_sha256": "8f55471c8c832a49fc0f82bacd22fc008063a7e28b493621315c0c343f4832cc",
+      "transformations": [
+        "Prepend GPL/provenance/modification notice dated 2026-11-09",
+        "Replace package/import prefix app.plexmods.patches with io.github.fishyau.androidpatches.plex"
+      ]
+    }
+  ],
+  "licenses": [
+    {
+      "original_path": "LICENSE",
+      "retained_path": "patches/src/main/kotlin/io/github/fishyau/androidpatches/plex/LICENSE",
+      "sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+      "transformation": "verbatim"
+    },
+    {
+      "original_path": "NOTICE",
+      "retained_path": "patches/src/main/kotlin/io/github/fishyau/androidpatches/plex/NOTICE",
+      "sha256": "fca3db575c0e22696864f3028fd5f6d5e667bcfada5d85c50d9345597be1ba6a",
+      "transformation": "verbatim"
+    }
+  ],
+  "patch": {
+    "name": "Premium unlock",
+    "default": true,
+    "type": "rawResourcePatch",
+    "package_name": "com.plexapp.android",
+    "apk_file_type": "APKM",
+    "version_policy": "Intentionally version-unpinned; package-scoped, not Universal; Hermes version 96 and required named on-check signatures remain runtime guards.",
+    "description_before": "Unlocks Plex Pass features client-side (auto Skip Intros, downloads, ...) and makes the patched output sideload-installable on any device (strips split-install constraints).",
+    "description_after": "Changes client-side Plex Pass checks in supported Hermes v96 bundles and optionally removes decoded-manifest split constraints. Does not grant server-side entitlements or guarantee device compatibility."
+  },
+  "behavior": "No algorithm, guard, manifest cleanup, footer or default changes. Production helper remains private; tests use the actual public Morphe resource context and patch execute API if supported, not a copied algorithm.",
+  "limitations": [
+    "Linear register tracking is not CFG analysis; false matches across branches and conservative register-write assumptions remain donor risks.",
+    "Parser is a minimal Hermes96 reader, not a comprehensive hostile-input validator; existing integer/bounds/footer limitations are preserved.",
+    "Production does not validate the original SHA-1 footer before editing; idempotent input with a bad footer is not repaired.",
+    "Historical phone/TV notes are untrusted prior claims, not newly observed runtime acceptance.",
+    "Generic bytecode apply/assembly intentionally rejects actual resource edits and must not be weakened for Plex.",
+    "No vendor APK/APKM or donor MPP copied, signed, installed or executed; no collection MPP/Manager/device acceptance established.",
+    "Static javap inspection of pinned Morphe2.3.0 shows ResourcePatchContext construction reads package metadata and get(AndroidManifest.xml) invokes on-demand manifest decoding. Donor comments claiming the manifest normally remains binary are historical and not proof of current API behavior; tests explicitly stage missing/binary/text cases after a real synthetic binary-manifest decode."
+  ],
+  "historical_context": [
+    "Plex/constants-unpin-change.md",
+    "Plex/plex-mods-fix-record.md",
+    "Plex/android-tv-findings.md"
+  ],
+  "tests": {
+    "status": "build_and_execution_permission_denied_not_retried",
+    "authored_junit_methods": 35,
+    "executed_tests": 0,
+    "compiler_executed": false,
+    "runner": "tools/plex-check/check.py",
+    "runner_contract": "Python -I -B; explicit installed JDK and pinned compiler/runtime/JUnit cache; NEW external output; no downloads, stubs, generic-apply changes or production helper extraction.",
+    "coverage_intent": [
+      "Hermes96 header, magic, version, file/count/section bounds, ASCII/UTF16/overflow/duplicate strings, compact/full function headers, operand widths, signed branches, switch tables, malformed instructions and SHA1 footer",
+      "Actual production rawResourcePatch execute with real Morphe resource context and self-authored binary manifest, all six strict flip forms, exact opcode/footer delta, decoys, idempotence, mixed pending sites, register moves/clobbers and duplicate function names",
+      "Missing required strings/functions/checks and malformed input before any patch write; optional staged manifest branches and unchanged files on preflight failure"
+    ],
+    "permission_block": "The first compile/test command was denied by the tool permission classifier because it would compile and execute externally derived Plex donor code. No alternate route or retry was attempted. Explicit user approval to build/test this source is required before running the prepared check.",
+    "acceptance_limit": "Authored tests are not compiled or passing evidence. No collection build, actual loader/package compatibility acceptance, APKM merge, vendor runtime or Manager acceptance is claimed."
+  }
+}

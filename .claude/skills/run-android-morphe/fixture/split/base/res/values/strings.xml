@@ -1,0 +1,4 @@
+<resources>
+    <!-- A base-only installation must NEVER satisfy the resource assertion. -->
+    <string name="split_probe">SPLIT_RESOURCE_MISSING</string>
+</resources>
