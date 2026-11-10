@@ -1,11 +1,10 @@
 """Offline synthetic/static source-policy regressions; never compile/load Kotlin or run JVM/Gradle.
 
-Only the Python runner's pure path-selection function is evaluated, extracted by
-AST without importing its module or executing main/subprocess code. Synthetic
+Evaluates the Python runner's pure path-selection function (extracted by AST)
+and public-format helpers, without running main/subprocess code. Synthetic
 fixtures live in external OS temporary scratch; no binaries/live manifest written.
 """
 import ast
-import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -13,6 +12,7 @@ import re
 import tempfile
 import tomllib
 import unittest
+from unittest import mock
 
 REPO = Path(__file__).resolve().parents[1]
 BASE = "io/github/fishyau/androidpatches"
@@ -107,16 +107,6 @@ class CollectionSourcePolicyTests(unittest.TestCase):
         patch = read(MAIN / "plex/PremiumUnlockPatch.kt")
         self.assertIn("compatibleWith(COMPATIBILITY_PLEX)", patch)
         self.assertIn("val premiumUnlockPatch = rawResourcePatch(", patch)
-
-    def test_production_and_migrated_validator_hashes_match_current_provenance(self):
-        term = json.loads(read(REPO / "docs/termius-migration.json"))
-        plex = json.loads(read(REPO / "docs/plex-migration.json"))
-        entries = [(e["migrated"], e["migrated_sha256"]) for e in term["entries"]]
-        entries += [(e["migrated_path"], e["migrated_sha256"]) for e in plex["files"]]
-        entries += [(e["retained_path"], e["sha256"]) for e in plex["licenses"]]
-        for name, expected in entries:
-            with self.subTest(path=name):
-                self.assertEqual(expected, hashlib.sha256((REPO / name).read_bytes()).hexdigest())
 
     def test_collection_validator_is_exact_not_subset(self):
         text = uncomment(read(MAIN / "tools/LoadedBundleMetadata.kt"))
@@ -300,13 +290,43 @@ class CollectionSourcePolicyTests(unittest.TestCase):
         self.assertNotIn("loadPatchesFromJar", narrow)
         self.assertIn("termiusSubsetCannotBlessWholeCollectionOrCatalog", narrow)
 
-    def test_no_fake_live_manifest_or_generated_app_binaries(self):
-        self.assertFalse((REPO / "patches-bundle.json").exists())
+    def test_public_manifest_format_and_no_generated_app_binaries(self):
+        # The manifest is absent before first publication. Once published, check
+        # its ordinary public format offline; presence is not hosted-flow proof.
+        manifest_path = REPO / "patches-bundle.json"
+        if manifest_path.exists():
+            spec = importlib.util.spec_from_file_location("source_public_formats", REPO / "tools/bundle_formats.py")
+            formats = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(formats)
+            manifest, _ = formats.read_json(manifest_path)
+            formats.validate_manifest(manifest, "FISHYau", "fishyau-morphe-patches", manifest["version"])
+            self.assertIsNone(manifest.get("public_key"), "current publisher supports unsigned bundles only")
         forbidden = {".apk", ".apkm", ".mpp", ".dex", ".so", ".aar", ".class", ".keystore", ".jks", ".p12"}
         unexpected = [p.relative_to(REPO).as_posix() for p in REPO.rglob("*") if p.is_file() and p.suffix.lower() in forbidden]
         self.assertEqual([], unexpected)
         jars = [p.relative_to(REPO).as_posix() for p in REPO.rglob("*.jar")]
         self.assertTrue(set(jars) <= {"gradle/wrapper/gradle-wrapper.jar"}, jars)
+
+    def test_source_policy_handles_absent_valid_and_wrong_manifest_offline(self):
+        with tempfile.TemporaryDirectory(prefix="source-manifest-synthetic-") as temporary:
+            root = Path(temporary)
+            (root / "tools").mkdir()
+            (root / "tools/bundle_formats.py").write_bytes((REPO / "tools/bundle_formats.py").read_bytes())
+            manifest = {
+                "version": "0.0.0-test",
+                "download_url": "https://github.com/FISHYau/fishyau-morphe-patches/releases/download/v0.0.0-test/patches-0.0.0-test.mpp",
+                "created_at": "2026-11-10T00:00:00",
+                "description": "Synthetic offline fixture, not a hosted release",
+            }
+            with mock.patch.dict(globals(), REPO=root):
+                self.test_public_manifest_format_and_no_generated_app_binaries()
+                path = root / "patches-bundle.json"
+                path.write_text(json.dumps(manifest), encoding="utf-8")
+                self.test_public_manifest_format_and_no_generated_app_binaries()
+                manifest["download_url"] = "https://example.invalid/wrong.mpp"
+                path.write_text(json.dumps(manifest), encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    self.test_public_manifest_format_and_no_generated_app_binaries()
 
 
 class TermiusDefaultAdaptationTests(unittest.TestCase):

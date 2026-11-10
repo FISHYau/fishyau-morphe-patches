@@ -12,10 +12,20 @@ from unittest import mock
 import zipfile
 
 REPO = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("identity_contract_observations", REPO / "tools/release/observations.py")
-o = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(o)
-si = o.si
+spec = importlib.util.spec_from_file_location("selected_identity", REPO / "tools/termius-check/selected_identity.py")
+si = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(si)
+
+
+def parse_json(raw):
+    def unique(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError("duplicate JSON key")
+            result[key] = value
+        return result
+    return json.loads(raw, object_pairs_hook=unique)
 
 
 def save(path, value):
@@ -53,7 +63,7 @@ class IdentityFixture:
         stack.enter_context(mock.patch.object(si, "ARCHIVE", si.record(self.archive)))
         stack.enter_context(mock.patch.object(si, "MEMBERS", self.fixed_members))
         stack.enter_context(mock.patch.object(si, "PAYLOADS", self.fixed_payloads))
-        self.selection = si.load_selection(self.descriptor, self.java, o.p.parse_json)
+        self.selection = si.load_selection(self.descriptor, self.java, parse_json)
 
     def verification(self):
         # Typed synthetic raw manifest tree, then the real shared manifest/topology API.
@@ -136,23 +146,16 @@ class IdentityContracts(unittest.TestCase):
             mutate(value)
             save(self.fixture.descriptor, value)
             with self.subTest(value=value), self.assertRaises((ValueError, OSError)):
-                si.load_selection(self.fixture.descriptor, self.fixture.java, o.p.parse_json)
+                si.load_selection(self.fixture.descriptor, self.fixture.java, parse_json)
 
-    def test_cli_preserves_descriptor_spelling_for_alias_rejection(self):
+    def test_descriptor_dot_path_spelling_is_rejected(self):
         alias = str(self.root) + "/./selection.json"
-        args = ["execute"]
-        for option in ("request", "bundle", "catalog", "jdk", "cache-root", "output"):
-            args += ["--" + option, str(self.root / option)]
-        args += ["--termius-selection", alias]
-        with mock.patch.object(o, "execute", return_value={"status": "incomplete-private-fragments-not-staging-ready"}) as execute:
-            self.assertEqual(o.main(args), 0)
-        self.assertEqual(execute.call_args.kwargs["termius_selection"], alias)
         with self.assertRaisesRegex(ValueError, "dot path"):
-            si.load_selection(alias, self.fixture.java, o.p.parse_json)
+            si.load_selection(alias, self.fixture.java, parse_json)
 
     def test_duplicate_descriptor_json_keys_rejected(self):
         self.fixture.descriptor.write_text('{"schema":1,"schema":1}')
-        with self.assertRaises(ValueError): si.load_selection(self.fixture.descriptor, self.fixture.java, o.p.parse_json)
+        with self.assertRaises(ValueError): si.load_selection(self.fixture.descriptor, self.fixture.java, parse_json)
 
     def test_all_payload_member_archive_and_descriptor_mutations_detected(self):
         selection = self.fixture.selection
@@ -185,7 +188,7 @@ class IdentityContracts(unittest.TestCase):
         first = self.fixture.value["members"][0]
         first["apk"] = str(self.fixture.members["split_config.mdpi.apk"])
         save(self.fixture.descriptor, self.fixture.value)
-        with self.assertRaises(ValueError): si.load_selection(self.fixture.descriptor, self.fixture.java, o.p.parse_json)
+        with self.assertRaises(ValueError): si.load_selection(self.fixture.descriptor, self.fixture.java, parse_json)
 
     def test_hardlink_duplicate_paths_and_original_ancestry_rejected(self):
         alias = self.root / "hardlink.apk"
@@ -244,7 +247,7 @@ class IdentityContracts(unittest.TestCase):
         for mutate in mutations:
             report = copy.deepcopy(original)
             mutate(report)
-            with self.subTest(mutation=mutate), self.assertRaises((ValueError, o.si.canonical_driver().DriverError)):
+            with self.subTest(mutation=mutate), self.assertRaises((ValueError, si.canonical_driver().DriverError)):
                 si.validate_verification(report, self.fixture.selection)
 
     def test_required_types_must_be_real_canonical_topology_not_a_claim(self):

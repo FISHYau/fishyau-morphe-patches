@@ -1,23 +1,25 @@
 # Contributing
 
-Develop and inspect an app in a private lab **outside this publication root**. Obtain app inputs lawfully; do not redistribute those inputs, extracted implementation or app assets in this repository.
+## Local development
 
-1. Record the original APK/APKM SHA-256, manifest package/version/code, split selection and vendor signer digests.
-2. Inspect original DEX with exact method descriptors. Decompiled source is navigation, not authoritative bytecode.
-3. Implement narrow fail-closed patches and synthetic positive/negative tests in the lab. Do not add unverified patch entry points here.
-4. Build a candidate with the collection scaffold, run the real target-patcher round trip, inspect emitted DEX and test rejection-before-mutation cases.
-5. Test the intended patched feature on a newly owned disposable emulator; drive it, inspect screenshot/UI/log evidence and record exact artifact hashes. Onboarding in an original app is not this check.
-6. Promote reviewed source/tests only after all gates pass. Rebuild and recheck the exact final collection artifact; adding another patch invalidates prior final-bundle approval.
-7. Prepare sanitized evidence/catalog/checksums. A protected human reviewer authenticates evidence provenance. Machine checks establish consistency, not that a self-authored report is truthful.
+1. Obtain authorized app inputs and independently verify package, version/code, signer and selected splits. Keep inputs and extracted material outside this checkout; do not redistribute vendor applications or assets.
+2. Inspect exact DEX selectors or the relevant resource structure. Decompiled names and strings are navigation, not proof of a unique or correct patch target.
+3. Implement narrow patches with positive and negative tests. Reject absent, ambiguous, incompatible and already-patched input before unwanted mutation.
+4. Run local tests and build the Android MPP with the official `buildAndroid` task. Generate the catalog from that exact artifact. Use the local Termius/Plex checkers where applicable.
+5. Test runtime behavior when useful, on authorized newly owned disposable emulators or through the user's requested on-device testing. Report what actually ran and what remains untested; do not manufacture passing reports.
 
-### Accepted existing Termius behavior
+Use the [canonical skill](.claude/skills/run-android-morphe/SKILL.md). Keep APK/DEX/MPP, build/cache outputs, signing material, logs and screenshots outside this checkout. Run Python with `-I -B` from trusted code, never from extracted app directories.
 
-For the initial **Server Auditor Offline Automation** and **Server Auditor Premium** sources only, the user explicitly confirmed tested/working behavior on **2026-11-09**. Do not manufacture new runtime reports from this confirmation or alter historical evidence. The versioned staging policy records inherited behavior acceptance separately, with original/migrated file hashes and mechanical changes. It still requires new exact-artifact compilation/structural/Manager-import verification and authenticated protected review before publication. This is not a generic exemption for new patches, changed algorithms or arbitrary versions.
+There is no whole-source-tree digest, freeze/request protocol, private runtime-report prerequisite, candidate receipt or protected independent-review approval. Historical migration records document origin; they are not immutable approval locks on future development. Preserve GPL notices, attribution and the collection's own About identity.
 
-Preserve GPL notices and file-level attribution; identify modifications. Keep About name exactly `FISHYau android patches`. Extensions and broad shared utility imports need a demonstrated dependency, not template convenience.
+## Device and credential boundaries
 
-Use the canonical `.claude/skills/run-android-morphe/` tooling. Outputs, tool installations and original/patched APKs belong outside this checkout. Use Python isolated mode (`-I`) for untrusted archives. Never run tools from extracted app directories.
+Use only authorized owned disposable runs. Verify exact device ownership before actions and process exit plus both owned ports released before cleanup. Never operate on someone else's device/data, use global ADB cleanup or bypass a denied operation through another tool. Signing, new keys, downloads, licenses and credentials need their applicable authorization.
 
-No existing devices or app data are test targets. Target explicit emulator serial/private ADB server, verify AVD ownership before device actions, and never use shared `kill-server`, clear app data or uninstall from somebody else's device. Do not bypass a denied operation through a different tool.
+Never put secrets in source, command arguments, reports or briefs. Use existing authorized credentials through environment variables or normal authenticated tooling.
 
-PR verification does not publish. Publication, repository creation/configuration, commits and pushes require explicit maintainer authorization; a passing test or manual workflow dispatch is not blanket permission. No automatic stable releases from ordinary development pushes.
+## Requested delivery
+
+Passing tests or pushing source does not publish. When the user requests availability through the GitHub source link, follow [the local delivery instructions](docs/release-handoff.md): select the tested MPP, upload public assets, verify downloaded bytes and update the Manager manifest last. Do not publish automatically from PRs or development pushes. Do not force/clobber an existing release or bypass GitHub's configured permissions.
+
+The user confirmed Termius working on 2026-11-09 and Plex Android/Android TV working on 2026-11-10. Preserve that acceptance without presenting it as a fresh assistant-run test of every later artifact.

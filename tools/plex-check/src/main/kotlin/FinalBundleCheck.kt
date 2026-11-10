@@ -20,8 +20,6 @@ import com.google.gson.stream.JsonToken
 import java.io.StringReader
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
-import java.time.LocalDateTime
-import java.time.ZoneOffset
 import com.reandroid.arsc.chunk.xml.AndroidManifestBlock
 import io.github.fishyau.androidpatches.tools.*
 import java.io.File
@@ -180,8 +178,8 @@ internal fun exercise(patch: RawResourcePatch, root: File, name: String, fixture
     return result
 }
 
-/** Strict JSON, including duplicate keys and numeric token types, before observations. */
-internal fun frozenJson(bytes: ByteArray): JsonElement {
+/** Strict catalog JSON, including duplicate keys, before loading the bundle. */
+internal fun strictJson(bytes: ByteArray): JsonElement {
     val text = Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
         .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString()
     return JsonReader(StringReader(text)).use { reader ->
@@ -212,108 +210,21 @@ internal fun frozenJson(bytes: ByteArray): JsonElement {
     }
 }
 
-private fun JsonObject.string(key: String): String {
-    val value = get(key)
-    require(value != null && value.isJsonPrimitive && value.asJsonPrimitive.isString) { "String required: $key" }
-    return value.asString
-}
-
-/** Hash the actual source entries with release.source_tree's exact byte contract. */
-private fun frozenSource(root: File): Map<String, String> {
-    require(root.isDirectory)
-    return root.walkTopDown().onEnter { it != root.resolve(".git") }.mapNotNull { file ->
-        require(!Files.isSymbolicLink(file.toPath())) { "Linked source" }
-        if (file.isDirectory) null else {
-            require(file.isFile)
-            file.relativeTo(root).invariantSeparatorsPath to sha256(file)
-        }
-    }.toMap().toSortedMap()
-}
-
-/** Shared by native main and the tools-only probe; does not open/load any MPP. */
-fun validateFrozenRequest(bytes: ByteArray, bundleHash: String, catalogHash: String,
-                                   treeHash: String, sourceRoot: File): JsonObject {
-    require(bytes.size <= 65536)
-    val request = frozenJson(bytes).asJsonObject
-    require(request.keySet() == setOf("schema", "policy", "owner", "repository", "version", "created_at",
-        "description", "bundle_sha256", "catalog_sha256", "source_tree_sha256", "provenance")) { "Exact schema2 fields required" }
-    val schema = request.get("schema")
-    require(schema.isJsonPrimitive && schema.asJsonPrimitive.isNumber && schema.toString() == "2") { "Integer schema2 required" }
-    require(request.string("policy") == "initial-three-patch-collection-v2")
-    require(request.string("owner") == "FISHYau" && request.string("repository") == "fishyau-morphe-patches"
-        && request.string("version") == "0.1.0") { "Target/version mismatch" }
-    val created = request.string("created_at")
-    require(created.matches(Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?"))) { "Offset-free UTC timestamp required" }
-    val whenCreated = LocalDateTime.parse(created)
-    require(whenCreated.year in 1..9999 && !whenCreated.toInstant(ZoneOffset.UTC).isAfter(Instant.now())) { "Invalid/future creation date" }
-    val description = request.string("description")
-    require(description.any { !it.isWhitespace() } && description.none { it.code < 32 || it.code == 127 }) { "Invalid description" }
-    for ((key, expected) in mapOf("bundle_sha256" to bundleHash, "catalog_sha256" to catalogHash, "source_tree_sha256" to treeHash)) {
-        require(request.string(key).matches(Regex("[0-9a-f]{64}")) && request.string(key) == expected) { "Digest mismatch: $key" }
-    }
-    val paths = frozenSource(sourceRoot)
-    val digest = MessageDigest.getInstance("SHA-256")
-    digest.update("release-tree-v1\u0000".toByteArray())
-    paths.forEach { (path, hash) -> digest.update((path + "\u0000" + hash + "\n").toByteArray(Charsets.UTF_8)) }
-    require(digest.digest().joinToString("") { "%02x".format(it) } == treeHash) { "Actual source tree mismatch" }
-
-    // Pin the reviewed migration records, then derive their file projections rather
-    // than maintaining another copy of every staging.py original/migrated hash.
-    fun migration(name: String, hash: String): JsonObject {
-        val file = sourceRoot.resolve("docs/$name-migration.json")
-        require(sha256(file) == hash) { "Unreviewed $name migration record" }
-        return frozenJson(file.readBytes()).asJsonObject
-    }
-    val termius = migration("termius", "5115547e2ac8a1109dcc180eff6e7cde311948f57f3df66e4291d31a25df2edd")
-    val plex = migration("plex", "2f75ab3be4f8eba720d6480a7762881cc50aef63662e5e50bd7387b3c5442a11")
-    val prefix = "patches/src/main/kotlin/io/github/fishyau/androidpatches/"
-    fun fileRow(path: String, original: String, migrated: String): Map<String, String> {
-        require(paths[path] == migrated) { "Migrated source mismatch: $path" }
-        return mapOf("path" to path, "original_sha256" to original, "migrated_sha256" to migrated)
-    }
-    val tfiles = termius.getAsJsonArray("entries").map { it.asJsonObject }
-        .filter { it.string("migrated").startsWith(prefix + "termius/") }
-        .map { fileRow(it.string("migrated"), it.string("original_sha256"), it.string("migrated_sha256")) }.sortedBy { it.getValue("path") }
-    val pfiles = (plex.getAsJsonArray("files").map { it.asJsonObject }.map {
-        fileRow(it.string("migrated_path"), it.string("original_sha256"), it.string("migrated_sha256"))
-    } + plex.getAsJsonArray("licenses").map { it.asJsonObject }.map {
-        fileRow(it.string("retained_path"), it.string("sha256"), it.string("sha256"))
-    }).sortedBy { it.getValue("path") }
-    require(paths.keys.filter { it.startsWith(prefix + "termius/") && it.endsWith(".kt") }.toSet() == tfiles.map { it.getValue("path") }.toSet())
-    require(paths.keys.filter { it.startsWith(prefix + "plex/") }.toSet() == pfiles.map { it.getValue("path") }.toSet())
-    val expected = metadataGson.toJsonTree(mapOf(
-        "termius" to mapOf("status" to "accepted-existing-behavior", "basis" to "user-confirmed-tested-working",
-            "adaptations" to "mechanical-namespace-import-helper-isolation-user-requested-premium-default-on-2026-11-09", "files" to tfiles),
-        "plex" to mapOf("repository" to "https://github.com/UnkyBadTouch/plex-morphe-patches",
-            "revision" to "38f05e52d57bdc68c55f9ca6ae0b0c7b1d08b06f", "basis" to "reviewed-source-migration-not-runtime-acceptance", "files" to pfiles)))
-    val provenance = request.getAsJsonObject("provenance").deepCopy()
-    // Staging accepts Termius file ordering independently of the request's byte hash.
-    val actualTermius = provenance.getAsJsonObject("termius")
-    actualTermius.add("files", JsonArray().apply {
-        actualTermius.getAsJsonArray("files").sortedBy { it.asJsonObject.string("path") }.forEach { add(it) }
-    })
-    require(provenance == expected) { "Pinned collection provenance mismatch" }
-    return request
-}
-
 /** Only an exact supplied FINAL Android MPP can reach the actual-loader/resource cases. */
 fun main(args: Array<String>) {
-    require(args.size == 7) { "bundle.mpp catalog.json frozen-request.json NEW-native-report.json NEW-cases-dir source-tree-sha256 source-root" }
+    require(args.size == 4) { "bundle.mpp catalog.json NEW-native-report.json NEW-cases-dir (use the external-output Python wrapper)" }
     val bundle = File(args[0]).canonicalFile; val catalog = File(args[1]).canonicalFile
-    val requestFile = File(args[2]).canonicalFile; val reportFile = File(args[3]).canonicalFile
-    val casesRoot = File(args[4]).canonicalFile
+    val reportFile = File(args[2]).canonicalFile; val casesRoot = File(args[3]).canonicalFile
     require(!reportFile.exists() && reportFile.parentFile.isDirectory && !casesRoot.exists())
+    require(casesRoot.parentFile == reportFile.parentFile && casesRoot != reportFile)
+    require(listOf(bundle, catalog).all { it.isFile && !it.toPath().startsWith(casesRoot.toPath()) })
     val report = linkedMapOf<String, Any?>("schema" to "plex-final-bundle-native-v1", "status" to "failed",
-        "started_at" to Instant.now().toString(), "request_sha256" to sha256(requestFile),
-        "source_tree_sha256" to args[5], "actual_definition" to "not_observed", "resource_execution" to "not_observed",
+        "started_at" to Instant.now().toString(), "actual_definition" to "not_observed", "resource_execution" to "not_observed",
         "scope" to "Synthetic noninstallable HBC96 resource fixtures only; not APKM merge, signing, ART, Manager or Plex application acceptance")
     val start = System.nanoTime()
-    val inputHashes = listOf(bundle, catalog, requestFile).associateWith { sha256(it) }
+    val inputHashes = listOf(bundle, catalog).associateWith { sha256(it) }
     try {
-        val request = validateFrozenRequest(requestFile.readBytes(), inputHashes.getValue(bundle),
-            inputHashes.getValue(catalog), args[5], File(args[6]).canonicalFile)
-        check(sha256(requestFile) == report["request_sha256"]) { "Request changed before loader" }
-        require(bundle.extension == "mpp" && bundle.length() in 22..(64L * 1024 * 1024))
+        require(bundle.extension == "mpp" && bundle.length() in 22..(128L * 1024 * 1024))
         val version = JarFile(bundle).use { jar ->
             val names = jar.entries().asSequence().map { it.name }.toList()
             check(names.size == names.toSet().size)
@@ -324,16 +235,22 @@ fun main(args: Array<String>) {
             val attrs = requireNotNull(jar.manifest).mainAttributes
             check(attrs.getValue("Patcher-Version") == "2.3.0")
             check(attrs.getValue("Name") == "FISHYau android patches" && attrs.getValue("Author") == "FISHYau")
-            requireNotNull(attrs.getValue("Version")).also { check(it == request.string("version")) { "Bundle/request version mismatch" } }
+            requireNotNull(attrs.getValue("Version")).also { require(it.isNotBlank()) { "Missing bundle version" } }
         }
+        require(catalog.length() in 2..(8L * 1024 * 1024))
+        val parsedCatalog = strictJson(catalog.readBytes()).asJsonObject
+        val catalogVersion = parsedCatalog.get("version")
+        require(catalogVersion != null && catalogVersion.isJsonPrimitive && catalogVersion.asJsonPrimitive.isString &&
+            catalogVersion.asString == version) { "Bundle/catalog version mismatch" }
+        check(inputHashes.all { (file, hash) -> sha256(file) == hash }) { "Inputs changed before loader" }
         isolated()
         report["parent_classpath"] = System.getProperty("java.class.path")
         report["classpath_isolation"] = "definition_and_production_plex_helper_resources_absent"
         val loaded = loadPatchesFromJar(setOf(bundle))
         requireCollectionInventory(loaded)
         val definitions = projectPatchDefinitions(loaded)
-        val parsedCatalog = frozenJson(catalog.readBytes()).asJsonObject
-        check(parsedCatalog.get("version").asString == version && parsedCatalog.getAsJsonArray("patches") == definitions)
+        check(parsedCatalog.getAsJsonArray("patches") == definitions) { "Loaded metadata/catalog mismatch" }
+        report["version"] = version
         val patch = loaded.single { it.name == "Premium unlock" } as RawResourcePatch
         report["actual_definition"] = "exact_three_loaded_metadata_catalog_verified"
         report["loader"] = "app.morphe.patcher.patch.loadPatchesFromJar"

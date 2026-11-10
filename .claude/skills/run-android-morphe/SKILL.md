@@ -9,7 +9,7 @@ Use this directory's `driver.py` from the publication repository root (`repo/` i
 
 ## Start here
 
-Read `docs/verification.md` for current evidence and this directory's `NOTES.md` for configuration/API details. These three commands passed in a fresh PowerShell process from the repository root on 2026-11-08; they do not operate devices or provision tools:
+Read `docs/verification.md` for bounded test status and this directory's `NOTES.md` for configuration/API details. These local entry points do not operate devices or provision tools:
 
 ```powershell
 py -I -B .claude/skills/run-android-morphe/driver.py --help
@@ -20,6 +20,18 @@ py -I -B .claude/skills/run-android-morphe/test_all.py
 Before a new task, obtain the exact desired change and observable baseline/patched behavior, authorized input APK/APKM and SHA-256, independently reviewed package/version-code/version-name/certificate pins, explicit installed tool paths, and NEW external lab/output paths. Signing requires separate authorization. Device operations require either explicit standing authorization in applicable user/workspace instructions covering the requested operations, or fresh explicit user approval. A prior successful run or task-specific approval is not standing authorization. Do not operate on preexisting/unowned devices or data, or retry explicitly denied cleanup. Downloads, licenses, keys, Git operations and publication remain separately authorized.
 
 Run Python with `-I -B` from trusted code, never from an archive/decompiler directory. Give each untrusted input/extraction a separate new directory; keep authored executable source and tools separate. All APKs, DEX, caches, keys, build outputs and private UI evidence stay outside the publication repository. Failed/partial outputs are not success and must not be reused as NEW outputs. Pins, `trusted_code` and `--reviewed-apply` are neither authentication, a sandbox nor approval: sources/assertions/tests execute trusted reviewed code.
+
+## Collection checks and requested delivery
+
+For the three-patch collection, use ordinary local checks rather than the retired release-evidence pipeline:
+
+- Run ordinary local source/unit tests. Build the actual Android MPP with the official `:patches:buildAndroid` task (through `driver.py build`, using an installed JDK21 image and a NEW external output). Generate the catalog from that exact existing MPP without rebuilding it; JVM development/test JARs are not Manager bundles.
+- Use `tools/termius-check/run_jvm_checks.py --scope collection` with explicit installed JDK21/cache paths and NEW external outputs. Follow its README for isolated same-MPP inventory and Termius structural checks; use `tools/plex-check/final_bundle.py` for same-MPP loading and synthetic resource checks. Report only checks actually executed and their limits.
+- For requested GitHub delivery, follow `docs/release-handoff.md` and use `tools/publish.py` with the explicit MPP/catalog. Default mode is a local preview; `--publish` requires a separate explicit publication request and a different NEW external output. `tools/bundle_formats.py` defines the shared public-format validation; keep it and the current publisher tests.
+- The retired `tools/release/`, `tools/manager-check/`, `.github/workflows/release.yml`, `MeasuredJUnit.java` wrapper and their protocol-only tests have been removed. Do not recreate that pipeline. Tool denials still apply and must not be bypassed.
+- No whole-source-tree digest/attestation, frozen request, mandatory private runtime report, candidate/Actions receipt or protected independent-review approval is required for delivery. Existing user acceptance of Termius and Plex Android/Android TV behavior is not a new assistant runtime run and must not be reopened as a publication gate. Local Manager import does not prove hosted-source discovery/download/update; observe that separately after requested publication.
+
+This workflow does not broaden patch compatibility, authorize publication or signing, or relax independent APK identity checks, external-output rules or owned-device boundaries.
 
 ## Driver-first development loop
 
@@ -55,4 +67,4 @@ Earlier build/runtime failures remain retained, not upgraded to success. Actual-
 
 The successful local runs used explicitly supplied existing paths relative to the parent workspace (not portable defaults): JDK `Termius/tools/temurin21-21.0.13-9/jdk-21.0.13+9`, SDK `.android-morphe/sdk` (build-tools36.0.0/platform36), JADX `Termius/tools/jadx-1.5.6/lib/jadx-1.5.6-all.jar`, and cache root `Termius/tools/gradle-home/caches/modules-2/files-2.1` with the exact compiler/runtime closure above. These are local prerequisites, not bundled tools or provisioning instructions. Resolve explicit absolute paths for your installation; never reuse existing smoke output or signing material.
 
-On 2026-11-08, workspace `fixture-smoke-02` passed the full fresh-shell fixture/device flow; main explicitly inspected both screenshots and recorded the expected labels separately. Fresh PowerShell replay from the repository root in `fixture-replay-01` passed assembly/verification without devices. These prove the bounded generic fixture path, not vendor patches, clean-machine provisioning, standalone-checkout independence, collection build/MPP, checker compilation, Manager import or release readiness. See NOTES and `docs/verification.md` for exact evidence and remaining gates.
+On 2026-11-08, workspace `fixture-smoke-02` passed the full fresh-shell fixture/device flow; main explicitly inspected both screenshots and recorded the expected labels separately. Fresh PowerShell replay from the repository root in `fixture-replay-01` passed assembly/verification without devices. These prove the bounded generic fixture path, not vendor patches, clean-machine provisioning, standalone-checkout independence, collection build/MPP, checker compilation, Manager import or release readiness. See NOTES and `docs/verification.md` for supported contracts and bounded test status.

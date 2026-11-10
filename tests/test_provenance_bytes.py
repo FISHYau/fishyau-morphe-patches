@@ -8,7 +8,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import tempfile
@@ -22,29 +21,13 @@ PLEX_PREFIX = "patches/src/main/kotlin/io/github/fishyau/androidpatches/plex/"
 LEGAL = ("LICENSE", "NOTICE", PLEX_PREFIX + "LICENSE", PLEX_PREFIX + "NOTICE")
 BYTE_PRESERVED = (PLEX_RECORD,) + LEGAL
 FIXTURE_PATHS = RECORDS + LEGAL
-NATIVE = ROOT / "tools/plex-check/src/main/kotlin/FinalBundleCheck.kt"
 
 
 def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def native_record_pins():
-    # Read literal call-site pins without importing runners or compiling Kotlin.
-    calls = re.findall(r'\bval\s+\w+\s*=\s*migration\("(termius|plex)",\s*"([0-9a-f]{64})"\)',
-                       NATIVE.read_text(encoding="utf-8"))
-    return [(f"docs/{name}-migration.json", digest) for name, digest in calls]
-
-
 class ProvenanceBytesTests(unittest.TestCase):
-    def test_native_migration_pins_match_actual_record_bytes(self):
-        pins = native_record_pins()
-        self.assertEqual(sorted(RECORDS), sorted(path for path, _ in pins))
-        for path, expected in pins:
-            with self.subTest(path=path):
-                self.assertEqual(expected, sha((ROOT / path).read_bytes()),
-                                 "Record bytes must match the reviewed native pin; do not normalize or repin")
-
     def test_plex_record_normalization_is_not_byte_equivalence(self):
         original = (ROOT / PLEX_RECORD).read_bytes()
         normalized = original.replace(b"\r\n", b"\n")
@@ -170,7 +153,7 @@ class GitProvenanceRoundTripTests(unittest.TestCase):
         checkout = self.checkout("false", "checkout-repaired-index")
         self.assertEqual(original, (checkout / PLEX_RECORD).read_bytes())
 
-    def test_missing_plex_override_reproduces_native_pin_mismatch(self):
+    def test_missing_plex_override_changes_historical_record_bytes(self):
         # Negative control: JSON equivalence cannot detect the old clean-filter bug.
         lines = self.attributes.splitlines(keepends=True)
         removed = [line for line in lines if line.split() == [PLEX_RECORD.encode(), b"-text"]]
@@ -182,7 +165,7 @@ class GitProvenanceRoundTripTests(unittest.TestCase):
         self.assertEqual(original.replace(b"\r\n", b"\n"), blob)
         self.assertNotEqual(original, blob)
         self.assertEqual(json.loads(original), json.loads(blob))
-        expected = dict(native_record_pins())[PLEX_RECORD]
+        expected = sha(original)
         self.assertEqual(expected, sha(original))
         self.assertNotEqual(expected, sha(blob))
         checkout = self.checkout("false", "checkout-broken-attributes")

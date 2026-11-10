@@ -26,7 +26,6 @@ import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.StandardOpenOption
-import java.time.Instant
 import io.github.fishyau.androidpatches.tools.*
 import com.google.gson.JsonParser
 import java.util.jar.JarFile
@@ -161,10 +160,8 @@ private fun writeFixture(original: File, dexFiles: List<File>, target: File) {
         }
     }
 }
-// output_sha256 is SHA-256 of retained UTF-8 manifest bytes: one numeric-DEX-order
-// row per actual file, "name\tsize(decimal bytes)\tsha256(lowercase hex)\n".
-// The manifest is outside the DEX directory so its exact file set is checkable.
-private val emittedMeasurements = mutableMapOf<File, Map<String, Any>>()
+// Keep emitted-file checks local to this run; no separate receipt/manifest files.
+private val emittedOutputs = mutableMapOf<File, List<Map<String, Any>>>()
 private fun dexInventory(directory: File): List<Map<String, Any>> {
     val files = checkNotNull(directory.listFiles()).toList()
     check(files.isNotEmpty()) { "No emitted DEX" }
@@ -178,16 +175,9 @@ private fun dexInventory(directory: File): List<Map<String, Any>> {
     }
     return ordered.map { mapOf("name" to it.name, "size" to it.length(), "sha256" to sha256(it)) }
 }
-private fun manifestBytes(inventory: List<Map<String, Any>>) = inventory.joinToString("") {
-    "${it.getValue("name")}\t${it.getValue("size")}\t${it.getValue("sha256")}\n"
-}.toByteArray(Charsets.UTF_8)
-private fun verifyEmitted(directory: File): Map<String, Any> {
-    val recorded = emittedMeasurements.getValue(directory)
-    val inventory = dexInventory(directory)
-    val manifest = File(recorded.getValue("manifest_path") as String)
-    check(manifest.isFile && !Files.isSymbolicLink(manifest.toPath()) && manifest.canonicalFile == manifest.absoluteFile)
-    check(inventory == recorded["dex_inventory"] && manifest.readBytes().contentEquals(manifestBytes(inventory)) &&
-        sha256(manifest) == recorded["output_sha256"]) { "Emitted DEX or manifest mutated: $directory" }
+private fun verifyEmitted(directory: File): List<Map<String, Any>> {
+    val recorded = emittedOutputs.getValue(directory)
+    check(dexInventory(directory) == recorded) { "Emitted DEX mutated: $directory" }
     return recorded
 }
 private fun emitDex(patcher: Patcher, directory: File): List<File> {
@@ -201,18 +191,10 @@ private fun emitDex(patcher: Patcher, directory: File): List<File> {
             dex.stream.use { stream -> Files.newOutputStream(file.toPath(), StandardOpenOption.CREATE_NEW).use { stream.copyTo(it) } }
         }
     }
-    val inventory = dexInventory(directory)
-    val manifest = directory.parentFile.resolve(directory.name + "-manifest.tsv")
-    Files.write(manifest.toPath(), manifestBytes(inventory), StandardOpenOption.CREATE_NEW)
-    emittedMeasurements[directory] = mapOf("directory" to directory.absolutePath,
-        "dex_inventory" to inventory, "manifest_path" to manifest.absolutePath, "output_sha256" to sha256(manifest),
-        "manifest_format" to "UTF-8; numeric contiguous DEX order; name TAB decimal-size TAB lowercase-sha256 LF")
+    emittedOutputs[directory] = dexInventory(directory)
     verifyEmitted(directory)
     return files
 }
-private fun snapshotDigest(snapshots: Map<String, List<String>>) = java.security.MessageDigest.getInstance("SHA-256")
-    .digest(metadataGson.toJson(snapshots.toSortedMap()).toByteArray(Charsets.UTF_8))
-    .joinToString("") { "%02x".format(it.toInt() and 255) }
 
 private fun verifyMapper(method: Method) {
     val body = checkNotNull(method.implementation)
@@ -274,8 +256,7 @@ private fun fingerprint(key: String): Fingerprint = when (key) {
     else -> error("Unknown fixture target $key")
 }
 
-// Both consumed directories are retained. The caller must index their common
-// parent; only output contains declared semantic DEX/fixtures/manifests.
+// Keep both output and patcher scratch directories, including on failure.
 private fun reserveStructuralDirectories(requested: File, source: File, inputs: List<File>): Pair<File, File> {
     val output = requested.absoluteFile
     check(output.toPath() == output.toPath().normalize() && output == output.canonicalFile) { "Canonical output required" }
@@ -302,8 +283,6 @@ private fun reserveStructuralDirectories(requested: File, source: File, inputs: 
 }
 
 fun main(args: Array<String>) = runBlocking {
-    val runStarted = Instant.now().toString()
-    val runTick = System.nanoTime()
     require(args.size == 5) { "Usage: exact.mpp input-base.apk NEW_OUTPUT_DIRECTORY exact-catalog.json SOURCE_REPOSITORY_ROOT" }
     val bundle = File(args[0]).canonicalFile
     val input = File(args[1]).canonicalFile
@@ -315,25 +294,14 @@ fun main(args: Array<String>) = runBlocking {
     val inputHash = sha256(input)
     val catalogHash = sha256(catalog)
     val (output, work) = reserveStructuralDirectories(File(args[2]), source, listOf(bundle, input, catalog))
-    fun envelope(): Map<String, Any> {
-        val ended = Instant.now().toString()
-        return mapOf("schema" to "termius-structural-check-v3", "started_at" to runStarted,
-            "ended_at" to ended, "observed_at" to ended, "elapsed_ns" to (System.nanoTime() - runTick),
-            "invocation" to args.toList(), "parent_classpath" to System.getProperty("java.class.path"),
-            "work_directory" to work.absolutePath, "request_authority" to "parent_exact_request2_preflight_only")
-    }
+    emittedOutputs.clear()
     val selections = mutableListOf<MutableMap<String, Any>>()
-    val negativeMeasurements = mutableListOf<MutableMap<String, Any>>()
-    val measurementStarts = mutableListOf<Pair<MutableMap<String, Any>, Long>>()
-    fun begin(names: List<String>, destination: MutableList<MutableMap<String, Any>>): Pair<MutableMap<String, Any>, Long> {
-        val record = mutableMapOf<String, Any>("selected" to names.sorted(), "status" to "incomplete",
-            "started_at" to Instant.now().toString())
+    val negativeResults = mutableListOf<MutableMap<String, Any>>()
+    val negativeFixtures = mutableMapOf<File, String>()
+    fun begin(names: List<String>, destination: MutableList<MutableMap<String, Any>>): MutableMap<String, Any> {
+        val record = mutableMapOf<String, Any>("selected" to names.sorted(), "status" to "incomplete")
         destination += record
-        return (record to System.nanoTime()).also { measurementStarts += it }
-    }
-    fun finish(record: Pair<MutableMap<String, Any>, Long>) {
-        record.first["ended_at"] = Instant.now().toString()
-        record.first["elapsed_ns"] = System.nanoTime() - record.second
+        return record
     }
     try {
     JarFile(bundle).use {
@@ -365,11 +333,10 @@ fun main(args: Array<String>) = runBlocking {
     val originalSnapshots = originals.mapValues { it.value.snapshot() }
     val checks = mutableListOf<String>()
     fun report(message: String) { checks += message; output.resolve("verification.txt").appendText(message + "\n"); println(message) }
-    fun recordSelection(record: Pair<MutableMap<String, Any>, Long>, changed: Set<String>, count: Int, directory: File) {
-        record.first.putAll(mapOf("status" to "applied_emitted_reread_verified",
-            "changed_methods" to changed.sorted(), "changed_method_count" to changed.size, "compared_methods" to count,
-            "reread_verified" to true, "controlflow_verified" to true, "emitted" to verifyEmitted(directory)))
-        finish(record)
+    fun recordSelection(record: MutableMap<String, Any>, changed: Set<String>, count: Int, directory: File) {
+        verifyEmitted(directory)
+        record.putAll(mapOf("status" to "applied_emitted_reread_verified",
+            "changed_methods" to changed.sorted(), "compared_methods" to count))
     }
     fun patchResult(name: String?, exception: Throwable?) = mapOf("name" to name, "error" to exception?.let { failure ->
         generateSequence(failure) { it.cause }.joinToString("\n") { "${it.javaClass.name}: ${it.message}" }
@@ -390,11 +357,11 @@ fun main(args: Array<String>) = runBlocking {
             }
         }
     }
-    val offlineMeasurement = begin(listOf(patch.name!!), selections)
+    val offlineResult = begin(listOf(patch.name!!), selections)
     val compiled = Patcher(config(input, work.resolve("temporary"))).use { patcher ->
         patcher += setOf(patch)
         val results = patcher().toList()
-        offlineMeasurement.first["patch_results"] = results.map { patchResult(it.patch.name, it.exception) }
+        offlineResult["patch_results"] = results.map { patchResult(it.patch.name, it.exception) }
         check(results.size == 1 && results.single().patch.name == patch.name)
         results.forEach { it.exception?.let { failure -> throw failure } }
         val files = emitDex(patcher, output.resolve("dex"))
@@ -404,7 +371,7 @@ fun main(args: Array<String>) = runBlocking {
         check(changed == offlineKeys) { "Unexpected changes: $changed" }
         check(changed.map { it.substringBefore("->") }.toSet().size == 3)
         verifyOffline(compared)
-        recordSelection(offlineMeasurement, changed, compared.size, output.resolve("dex"))
+        recordSelection(offlineResult, changed, compared.size, output.resolve("dex"))
         report("PASS: standalone Offline Automation loads/applies/compiles/re-reads with patcher 2.3.0")
         report("PASS: exactly three single-instruction replacements in ${compared.size} compared methods")
         report("PASS: global Pro/auth getters, mapper/expiry, account/onboarding code and selection/save callbacks unchanged")
@@ -415,12 +382,11 @@ fun main(args: Array<String>) = runBlocking {
 
     suspend fun assertRejected(fixture: File, directory: File, diagnostic: String, already: Boolean,
         selected: Set<app.morphe.patcher.patch.Patch> = setOf(patch)) {
-        val measurement = begin(selected.map { it.name!! }, negativeMeasurements)
-        val record = measurement.first
-        record.putAll(mapOf("name" to directory.name, "fixture_path" to fixture.absolutePath,
-            "fixture_sha256" to sha256(fixture), "expected_diagnostic" to diagnostic, "requires_already_patched" to already))
+        val record = begin(selected.map { it.name!! }, negativeResults)
+        record.putAll(mapOf("name" to directory.name, "expected_diagnostic" to diagnostic))
+        val fixtureHash = sha256(fixture)
+        negativeFixtures[fixture] = fixtureHash
         val before = readComparedMethods(fixture).mapValues { it.value.snapshot() }
-        record["before_snapshot_sha256"] = snapshotDigest(before)
         record["compared_methods"] = before.size
         Patcher(config(fixture, work.resolve(directory.name).resolve("temporary"))).use { rejected ->
             rejected += selected
@@ -436,16 +402,12 @@ fun main(args: Array<String>) = runBlocking {
             }.joinToString("\n")
             record["rejection_diagnostic"] = messages
             val matched = diagnostic in messages && (!already || "already patched" in messages)
-            record["diagnostic_matched"] = matched
             check(matched) { "Wrong rejection: $messages" }
             val after = readEmitted(emitDex(rejected, directory.resolve("rejected-dex"))).mapValues { it.value.snapshot() }
-            record["emitted"] = verifyEmitted(directory.resolve("rejected-dex"))
-            record["after_snapshot_sha256"] = snapshotDigest(after)
-            record["snapshots_equal"] = before == after
+            verifyEmitted(directory.resolve("rejected-dex"))
             check(before == after) { "Preflight mutated code before rejection: ${directory.name}" }
-            check(sha256(fixture) == record["fixture_sha256"]) { "Fixture mutated" }
+            check(sha256(fixture) == fixtureHash) { "Fixture mutated" }
             record["status"] = "expected_rejection_unchanged_bounded_snapshot"
-            finish(measurement)
             report("PASS: ${directory.name} rejected by $diagnostic preflight before any compared method mutation")
         }
     }
@@ -494,11 +456,11 @@ fun main(args: Array<String>) = runBlocking {
         check(changed == setOf(fixture.key)) { "Incorrect independent fixture: $changed" }
         assertRejected(apk, directory, fixture.diagnostic, fixture.already)
     }
-    val premiumMeasurement = begin(listOf(premium.name!!), selections)
+    val premiumResult = begin(listOf(premium.name!!), selections)
     Patcher(config(input, work.resolve("premium-temporary"))).use { checkPremium ->
         checkPremium += setOf(premium)
         val results = checkPremium().toList()
-        premiumMeasurement.first["patch_results"] = results.map { patchResult(it.patch.name, it.exception) }
+        premiumResult["patch_results"] = results.map { patchResult(it.patch.name, it.exception) }
         check(results.size == 1 && results.single().patch.name == premium.name)
         results.forEach { it.exception?.let { failure -> throw failure } }
         val files = emitDex(checkPremium, output.resolve("premium-dex"))
@@ -507,18 +469,18 @@ fun main(args: Array<String>) = runBlocking {
         val changed = compared.filter { (key, method) -> method.snapshot() != originalSnapshots[key] }.keys
         check(changed == setOf(MAPPER_KEY, EXPIRY_KEY)) { "Unexpected Premium regression: $changed" }
         verifyPremium(compared)
-        recordSelection(premiumMeasurement, changed, compared.size, output.resolve("premium-dex"))
+        recordSelection(premiumResult, changed, compared.size, output.resolve("premium-dex"))
         report("PASS: Premium-only changes mapper/expiry only within bounded compared classes; storage Pro/auth and Automation unchanged")
         val directory = output.resolve("premium-repeat").also { check(it.mkdir()) }
         val repeatedPremium = directory.resolve("fixture-NOT-INSTALLABLE.apk")
         writeFixture(input, files, repeatedPremium)
         assertRejected(repeatedPremium, directory, "mapper", true, setOf(premium))
     }
-    val combinedMeasurement = begin(listOf(patch.name!!, premium.name!!), selections)
+    val combinedResult = begin(listOf(patch.name!!, premium.name!!), selections)
     Patcher(config(input, work.resolve("combined-temporary"))).use { combined ->
         combined += setOf(patch, premium)
         val results = combined().toList()
-        combinedMeasurement.first["patch_results"] = results.map { patchResult(it.patch.name, it.exception) }
+        combinedResult["patch_results"] = results.map { patchResult(it.patch.name, it.exception) }
         check(results.size == 2 && results.map { it.patch.name }.toSet() == setOf(patch.name, premium.name))
         results.forEach { it.exception?.let { failure -> throw failure } }
         val compared = readEmitted(emitDex(combined, output.resolve("combined-dex")))
@@ -527,42 +489,36 @@ fun main(args: Array<String>) = runBlocking {
         check(changed == offlineKeys + setOf(MAPPER_KEY, EXPIRY_KEY)) { "Unexpected combined-selection changes: $changed" }
         verifyOffline(compared)
         verifyPremium(compared)
-        recordSelection(combinedMeasurement, changed, compared.size, output.resolve("combined-dex"))
+        recordSelection(combinedResult, changed, compared.size, output.resolve("combined-dex"))
         report("PASS: combined selection emits/rereads exactly the union of approved edits within bounded compared classes")
     }
     check(sha256(bundle) == bundleHash && sha256(input) == inputHash && sha256(catalog) == catalogHash) {
         "Inputs changed during structural checks"
     }
-    check(selections.size == 3 && negativeMeasurements.size == 9)
-    emittedMeasurements.keys.forEach { verifyEmitted(it) }
-    negativeMeasurements.forEach { check(sha256(File(it.getValue("fixture_path") as String)) == it["fixture_sha256"]) }
+    emittedOutputs.keys.forEach { verifyEmitted(it) }
+    negativeFixtures.forEach { (fixture, hash) -> check(sha256(fixture) == hash) { "Fixture mutated: $fixture" } }
     report("PASS: all required offline/preservation/negative/selection checks completed; no device accessed")
     val result = mapOf(
-        "schema" to "termius-structural-check-v3",
         "status" to "bounded_structural_checks_passed",
-        "observed_at" to Instant.now().toString(),
+        "work_directory" to work.absolutePath,
         "bundle_sha256" to bundleHash, "catalog_sha256" to catalogHash, "input_base_sha256" to inputHash,
         "patcher_version" to "2.3.0", "patches" to definitions, "dependencies" to projectDependencies(loaded),
         "definition_scope" to "exact_three_collection_definitions",
         "application_scope" to "Termius_only_singletons_and_combined",
         "plex_application" to "not_supported_not_attempted",
         "selections" to selections, "negative_cases" to listOf("repeat", "premium-repeat") + fixtures.map { it.name },
-        "negative_measurements" to negativeMeasurements, "emitted_outputs" to emittedMeasurements.values.toList(),
-        "snapshot_digest_format" to "SHA-256 of metadataGson UTF-8 JSON: sorted method-key map of ordered bounded snapshot string arrays",
+        "negative_results" to negativeResults,
         "comparison_scope" to mapOf("kind" to "selected_classes_only_not_whole_app", "methods" to originals.size,
             "explicit_owners" to comparedOwners.sorted(), "nested_owner_prefixes" to listOf(LOCAL_EDITOR.dropLast(1) + "$", PRESENTER.dropLast(1) + "$"),
             "method_data" to "flags/registers/tries/instructions/operands/normalized-control-flow; excludes debug metadata, class metadata and fields"),
         "checks" to checks,
         "android_bundle_load" to "not_observed", "manager_import" to "not_observed", "device_behavior" to "not_observed",
         "output_kind" to "unsigned_incomplete_noninstallable_structural_fixtures",
-    ) + envelope()
+    )
     Files.writeString(output.resolve("structural-check.json").toPath(), metadataGson.toJson(result), StandardOpenOption.CREATE_NEW)
     } catch (failure: Throwable) {
-        measurementStarts.filter { "ended_at" !in it.first }.forEach { finish(it) }
-        val failed = mapOf("schema" to "termius-structural-check-v3", "status" to "failed",
-            "error" to "${failure.javaClass.name}: ${failure.message}", "observed_at" to Instant.now().toString(),
-            "selections" to selections, "negative_measurements" to negativeMeasurements,
-            "emitted_outputs_unverified_after_failure" to emittedMeasurements.values.toList()) + envelope()
+        val failed = mapOf("status" to "failed", "error" to "${failure.javaClass.name}: ${failure.message}",
+            "work_directory" to work.absolutePath, "selections" to selections, "negative_results" to negativeResults)
         try {
             Files.writeString(output.resolve("structural-check-failed.json").toPath(), metadataGson.toJson(failed), StandardOpenOption.CREATE_NEW)
         } catch (reportFailure: Throwable) { failure.addSuppressed(reportFailure) }

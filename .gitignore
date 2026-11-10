@@ -1,3 +1,6 @@
+# Local Claude-only delegation marker
+/.no-opencode
+
 # Build/tool state is never publication source
 .gradle/
 **/build/

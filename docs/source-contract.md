@@ -1,6 +1,6 @@
 # Morphe source compatibility
 
-Reference snapshot: patches `8fa2c7a1a832498de8f179748998a3ca87e198eb`; Manager `6bd844d99ef9a13fcae08b68742662ff5bd19f83`. Compatibility can change; test the actual target Manager version before releasing.
+Reference snapshot: patches `8fa2c7a1a832498de8f179748998a3ca87e198eb`; Manager `6bd844d99ef9a13fcae08b68742662ff5bd19f83`. Compatibility can change; use the actual target Manager version for on-device testing.
 
 ## Discovery
 
@@ -22,7 +22,7 @@ Signing is optional for a source with no pinned key. Advertised/pinned keys must
 
 ## Stable update safety
 
-Both main/dev manifests can participate in channel selection. Do not expose unverified candidates through either manifest. Upload and validate the exact approved MPP before advancing the stable manifest; never rebuild during publication and silently inherit approval.
+Both main/dev manifests can participate in channel selection. On an explicit publication request, upload the selected locally checked MPP and compare the downloadable bytes before updating the manifest. Do not rebuild during upload or point the manifest at a missing asset. Runtime testing can follow delivery; no private reports or protected approval are required.
 
 No live discovery manifest is committed until an actual verified release exists. Schema/fixture tests do not prove remote add-source, download, loading or update behavior. Those are separately recorded end-to-end checks after authorized hosting.
 

@@ -4,53 +4,60 @@ An independent Android patch collection **compatible with Morphe**. Not affiliat
 
 ## Included patches
 
-The collection contains three patches. The two Server Auditor patches target **Termius / Server Auditor 8.0.1 (version code 1008)**, package `com.server.auditor.ssh.client`, APKM packaging.
-
-| Patch | Selected by default | Scope |
+| Patch | Default | Scope |
 |---|---|---|
-| **Server Auditor Offline Automation** | Yes | Local startup-snippet Automation without a Termius account. Select alone; leaves global authentication and Pro state unchanged. Account-independent does not mean network-free SSH. |
-| **Server Auditor Premium** | Yes | Optional legacy Pro title/expiry override. Does not enable account-free Automation or change storage/server entitlements. |
-| **Premium unlock** | Yes | Plex client-side premium-check edits in the Hermes v96 bundle. Package `com.plexapp.android`, APKM; version-unpinned compatibility with required signatures, not a guarantee for every version or device. |
+| **Server Auditor Offline Automation** | On | Local startup-snippet Automation without a Termius account. For isolated Automation, deselect Premium; global authentication and Pro state stay unchanged. Account-independent does not mean network-free SSH. |
+| **Server Auditor Premium** | On | Optional legacy client Pro title/expiry override; does not change storage or server entitlements. |
+| **Premium unlock** | On | Plex client-side premium-check edits in a Hermes v96 bundle, guarded by required function/signature checks. |
 
-Both Termius patches are selected by default at the user's explicit request on **2026-11-09**; Plex remains selected by default. This is a default-selection metadata change only, recorded separately from donor behavior migration in [Termius provenance](docs/termius-migration.json). For isolated account-free Automation, the **select-alone** guidance means deselect Premium; it is not the collection default. Default co-selection does not establish combined Android runtime acceptance.
+The Server Auditor patches target `com.server.auditor.ssh.client` **8.0.1 / code 1008**, APKM. Plex targets `com.plexapp.android`, APKM, with intentionally unpinned versions; this is not a guarantee for every version or device. Plex also conditionally adjusts split-install attributes in a decoded text manifest. Neither patch provisions backend entitlements.
 
-The Plex patch also conditionally removes split-install constraints from a decoded text manifest. It does not grant server-side entitlements or establish universal sideload support. See [Plex migration provenance](docs/plex-migration.json); supplied historical success notes are not fresh verification of this collection.
+Both Termius defaults were requested on 2026-11-09; Plex is also selected by default. The user confirmed Termius working on 2026-11-09 and Plex working on Android and Android TV on 2026-11-10. These are user confirmations, not newly executed tests for every future bundle. Declared compatibility is unchanged.
 
-The user confirmed the **two Server Auditor patches** as **tested and working on 2026-11-09**. That confirmation does not cover Plex. This is accepted existing behavior, not a claim that a newly built collection MPP has passed Android execution or Manager import. Compilation, structural checks, local Manager import and hosted-source verification have separate statuses in [verification](docs/verification.md).
+There are no Universal or SpotifyTV patches here. No vendor applications, extracted application code or patched APKs are distributed.
 
-There are **no Universal patches** in this collection. No SpotifyTV patch is included or advertised. No vendor APKs, extracted application implementation or patched applications are distributed.
+## Develop and test locally
 
-## Adding this source to Morphe
+Use **JDK 21**, Gradle **9.8.2**, Morphe settings plugin **2.1.0**, patcher **2.3.0**, and JVM **17** targets. The official **`:patches:buildAndroid`** task creates the Android MPP; a JVM development JAR is not a Manager artifact.
 
-**Hosted-source discovery/download/update remains unverified.** The intended repository URL is:
+Keep all build outputs, caches, app inputs, keys and private device files **outside this checkout**. The [canonical tooling](.claude/skills/run-android-morphe/SKILL.md) builds in an external working copy:
+
+```text
+python -I -B .claude/skills/run-android-morphe/driver.py build --source ABS_REPO --image INSTALLED_JDK21_IMAGE --out NEW_EXTERNAL_DIR --version VERSION
+```
+
+The driver runs `:patches:test :patches:buildAndroid` and generates a catalog from the same MPP. It never pulls an image. Use `--offline` with an already populated approved dependency cache when appropriate. GitHub Packages may require existing authorized package-read access; pass credentials securely through the invoking environment, never through chat, argv or source files.
+
+Offline tooling checks, from this repository root:
+
+```text
+python -I -B -m unittest discover -s tests -p "test_*.py" -v
+python -I -B tools/test_scaffold.py
+python -I -B tools/check_scaffold.py
+python -I -B .claude/skills/run-android-morphe/test_all.py
+```
+
+For actual artifact checks, see [Termius JVM/DEX checks](tools/termius-check/README.md) and [Plex resource checks](tools/plex-check/README.md). Use the canonical owned-emulator tools for runtime testing when needed. Local diagnostics are useful; source-tree attestations, private runtime reports, candidate receipts and protected reviewer approval are **not** required to deliver a test bundle.
+
+## Use this source in Morphe
+
+The GitHub source link is:
 
 `https://github.com/FISHYau/fishyau-morphe-patches`
 
-After separately authorized bundle publication, Manager is intended to read:
+Manager resolves it to:
 
 `https://raw.githubusercontent.com/FISHYau/fishyau-morphe-patches/main/patches-bundle.json`
 
-That manifest must point to the exact verified Android MPP. Pushing source alone or attaching an arbitrary release JAR is insufficient. No fake live manifest is included. Local MPP import was observed on 2026-11-10; it is not remote discovery/download/update proof.
+A source-code push alone does not make the bundle available. **Only when the user requests publication for on-device testing**, upload the selected MPP, verify the downloadable bytes, then update that manifest last. The local [delivery command and checklist](docs/release-handoff.md) does this without a candidate pipeline or protected approval service. Ordinary pushes and PRs never publish.
 
-## Build and verification
+No placeholder live manifest is included. Hosted discovery/download/update must be tested after actual publication; local import or HTTP availability alone does not establish the full Manager flow. See [verification status](docs/verification.md) and the [Manager format contract](docs/source-contract.md).
 
-The collection targets JVM 17 using **JDK 21**, Gradle **9.8.2**, Morphe settings plugin **2.1.0** and patcher **2.3.0**. The required build is the official **`buildAndroid`** task; a JVM development JAR is not a Manager-ready MPP.
+## Layout and attribution
 
-**Current status (2026-11-10):** official Android **build10** passed **121 Gradle cases**, and **freeze06** retained the exact MPP and same-byte catalog. Bounded final-MPP checks completed, and unchanged official **Morphe Manager 2.5.0** successfully imported that MPP on a NEW tooling-owned disposable emulator, displaying **FISHYau android patches**, version **0.1.0**, **3 patches** and **2 apps**. This proves local-source loading and displayed inventory, not Manager patch execution or app feature behavior. Partial observations remain `complete_evidence:false` and are not staging-ready. The frozen MPP binds the prior exact source tree; this source update, including documentation reconciliation and a separate `.gitattributes` byte-preservation fix, does not retroactively extend that whole-tree binding to the committed source. No binary rebuild is required merely for source commit/push, but the retained MPP must not be certified as built from the updated tree. Any future exact-tree release needs new matching build/freeze/observation bindings. The user's existing Termius acceptance stands; Plex Android acceptance, hosted discovery/download/update, complete staging and protected release review remain incomplete. Historical failures remain retained. See [verification](docs/verification.md) for evidence, exact bindings and qualifications.
+- `patches/`: three patch implementations, validator/Hermes/inventory tests and isolated catalog tooling.
+- `tools/`: local artifact-format, delivery and app-specific checking tools.
+- `.claude/skills/run-android-morphe/`: inspection, build, assembly and owned-emulator tooling.
+- `docs/`: operational instructions, compatibility and historical provenance.
 
-Use the [canonical tooling](.claude/skills/run-android-morphe/SKILL.md) to build in an isolated external work copy and collect the exact bundle, catalog, hashes and test reports. All builds, caches, APK/DEX/MPP files, keys and private evidence stay **outside this source root**, even if ignored by Git. See [tooling notes](.claude/skills/run-android-morphe/NOTES.md) for invocation details and [verification status](docs/verification.md) for results and blockers.
-
-The official GitHub Packages registry can require authenticated package-read access even for public packages. The Docker driver forwards existing `GITHUB_ACTOR` and `GITHUB_TOKEN` by **environment variable name**, not value, and does not mount user-level Gradle configuration. Provision credentials securely in the invoking process. **Never paste tokens into chat, put them on command lines or commit them.** Download approval alone does not supply package access. See [GitHub’s Gradle registry documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-gradle-registry).
-
-## Repository and release boundaries
-
-- `patches/`: the three patch implementations, validator/Hermes/inventory tests and actual-loaded-definition catalog tooling.
-- `tools/termius-check/`: source for bounded actual-patcher Termius structural verification, using explicit external input/tool/cache paths. The generic bytecode-only harness does not support Plex raw-resource edits.
-- `tools/plex-check/`: isolated final-MPP Plex synthetic resource checker using the exact frozen schema-2 request; tools-only compilation and contract tests are not final-MPP or Android runtime observations.
-- `tools/release/`: guarded exact-byte build freeze, validation, truthful pre-publication staging and protected publication handoff tooling.
-- `.claude/skills/run-android-morphe/`: canonical inspection/build/emulator tools and regression tests.
-- `docs/`: source contract, provenance, acceptance policy and measured verification results.
-
-A staged candidate is **not published**. Git initialization, commits, pushes, repository/release creation and stable-manifest advancement are separate maintainer actions. A protected reviewer must authenticate the original evidence; self-authored JSON and matching hashes do not prove its truth. Publication must upload and re-download/hash approved assets **before** advancing the stable manifest, with no rebuild or stale approval reuse.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md), [source contract](docs/source-contract.md), [promotion policy](docs/promotion.md), [provenance](docs/provenance.md), [LICENSE](LICENSE), [NOTICE](NOTICE) and [THIRD_PARTY.md](THIRD_PARTY.md). Preserve applicable source notices and the distinct **FISHYau android patches** identity.
+See [CONTRIBUTING.md](CONTRIBUTING.md), [provenance](docs/provenance.md), [LICENSE](LICENSE), [NOTICE](NOTICE) and [THIRD_PARTY.md](THIRD_PARTY.md). Preserve applicable notices and the distinct **FISHYau android patches** identity.

@@ -4,7 +4,7 @@
 gradlew text eol=lf
 gradlew.bat text eol=crlf
 *.jar binary
-# The native final-bundle checker pins this record's original CRLF bytes.
+# Preserve the historical migration record's original bytes.
 docs/plex-migration.json -text
 # Preserve exact upstream legal bytes and their recorded SHA-256 provenance.
 LICENSE -text
