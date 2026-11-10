@@ -132,6 +132,30 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(manifest["version"], VERSION)
         self.assertNotIn("public_key", manifest)
 
+    def test_prepared_catalog_preserves_four_entry_default_on_tv_metadata(self):
+        directory, _, _ = self.prepare()
+        catalog, _ = f.read_json(directory / "patches-list.json")
+        self.assertEqual({patch["name"]: patch["default"] for patch in catalog["patches"]}, {
+            "Server Auditor Offline Automation": True, "Server Auditor Premium": True,
+            "Premium unlock": True, "Disable Home previews": True})
+        spotify = next(patch for patch in catalog["patches"] if patch["name"] == "Disable Home previews")
+        app = spotify["compatiblePackages"][0]
+        self.assertEqual((app["packageName"], app["apkFileType"], app["formFactor"]),
+                         ("com.spotify.tv.android", "APKM_REQUIRED", "TV"))
+        self.assertEqual(app["targets"][0]["versionCodes"], {abi: 147600562 for abi in f.ABI})
+
+    def test_wrong_spotify_metadata_never_creates_prepared_output_or_network(self):
+        for field, value in (("default", False), ("apkFileType", "APKM"), ("formFactor", "MOBILE"),
+                             ("targets", []), ("packageName", "com.example.other")):
+            catalog = fixtures.catalog_fixture()
+            spotify = next(patch for patch in catalog["patches"] if patch["name"] == "Disable Home previews")
+            (spotify if field == "default" else spotify["compatiblePackages"][0])[field] = value
+            self.catalog.write_bytes(f.canonical(catalog))
+            with self.subTest(field=field), mock.patch.object(p, "GitHub", side_effect=AssertionError("no network")):
+                with self.assertRaises(ValueError):
+                    self.prepare()
+            self.assertFalse((self.base / "prepared").exists())
+
     def test_success_manifest_last_and_initial_absent_supported(self):
         for present in (True, False):
             with self.subTest(present=present):

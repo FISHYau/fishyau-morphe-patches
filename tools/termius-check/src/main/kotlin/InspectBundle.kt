@@ -63,5 +63,5 @@ fun main(args: Array<String>) {
         "limitations" to listOf("JVM loader is not Android/ART execution or Manager import", "Unsigned ZIP structure only; no signature verification", "No feature/runtime approval"),
     )
     Files.writeString(output.toPath(), metadataGson.toJson(report), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
-    println("Verified exact three definitions, catalog, explicit dependencies and metadata on JVM; Android load and Plex application not observed")
+    println("Verified exact four definitions, catalog, explicit dependencies and metadata on JVM; Android load, Plex application and Spotify application not observed")
 }

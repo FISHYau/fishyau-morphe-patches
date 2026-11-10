@@ -252,7 +252,7 @@ fun main(args: Array<String>) {
         check(parsedCatalog.getAsJsonArray("patches") == definitions) { "Loaded metadata/catalog mismatch" }
         report["version"] = version
         val patch = loaded.single { it.name == "Premium unlock" } as RawResourcePatch
-        report["actual_definition"] = "exact_three_loaded_metadata_catalog_verified"
+        report["actual_definition"] = "exact_four_loaded_metadata_catalog_verified"
         report["loader"] = "app.morphe.patcher.patch.loadPatchesFromJar"
         report["bundle_sha256"] = inputHashes.getValue(bundle); report["catalog_sha256"] = inputHashes.getValue(catalog)
         report["patches"] = definitions; report["dependencies"] = projectDependencies(loaded)

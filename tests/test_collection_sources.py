@@ -25,12 +25,14 @@ EXPECTED_MAIN = {
     "termius/Compatibility.kt", "termius/BooleanReturn.kt", "termius/Fingerprints.kt",
     "termius/BytecodeLayout.kt", "termius/PremiumPatchValidation.kt", "termius/OfflineAutomationValidation.kt",
     "plex/PremiumUnlockPatch.kt", "plex/shared/Constants.kt", "plex/shared/HermesBytecode.kt",
+    "spotify/HomePreviewPatch.kt", "spotify/HomePreviewSnapshots.kt", "spotify/HomePreviewValidation.kt", "spotify/Compatibility.kt",
     "tools/LoadedBundleMetadata.kt", "tools/PatchListGenerator.kt",
 }
 EXPECTED_DEFINITIONS = {
     "Server Auditor Offline Automation": ("bytecodePatch", True),
     "Server Auditor Premium": ("bytecodePatch", True),
     "Premium unlock": ("rawResourcePatch", True),
+    "Disable Home previews": ("bytecodePatch", True),
 }
 
 
@@ -56,7 +58,7 @@ def block(text, marker):
 def source_selector():
     """Extract only literal allowlists and the reviewed pure path-policy function."""
     tree = ast.parse(read(RUNNER), filename=str(RUNNER))
-    names = {"TERMIUS_MAIN", "PLEX_MAIN", "PROJECTION", "TERMIUS_TESTS", "PLEX_TESTS", "COLLECTION_TESTS"}
+    names = {"TERMIUS_MAIN", "PLEX_MAIN", "SPOTIFY_MAIN", "PROJECTION", "TERMIUS_TESTS", "PLEX_TESTS", "SPOTIFY_TESTS", "COLLECTION_TESTS"}
     namespace = {}
     for node in tree.body:
         if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id in names:
@@ -77,7 +79,7 @@ class CollectionSourcePolicyTests(unittest.TestCase):
     def test_exact_production_source_allowlist(self):
         self.assertEqual(EXPECTED_MAIN, {p.relative_to(MAIN).as_posix() for p in (REPO / "patches/src/main/kotlin").rglob("*.kt")})
 
-    def test_exact_three_declarations_types_and_explicit_defaults(self):
+    def test_exact_four_declarations_types_and_explicit_defaults(self):
         definitions = []
         for path in MAIN.rglob("*.kt"):
             text = read(path)
@@ -88,7 +90,7 @@ class CollectionSourcePolicyTests(unittest.TestCase):
                 self.assertIsNotNone(name, path)
                 self.assertIsNotNone(default, path)
                 definitions.append((name.group(1), (kind, default.group(1) == "true")))
-        self.assertEqual(3, len(definitions))
+        self.assertEqual(4, len(definitions))
         self.assertEqual(EXPECTED_DEFINITIONS, dict(definitions))
 
     def test_term_compatibility_remains_finite_and_apkm(self):
@@ -108,6 +110,22 @@ class CollectionSourcePolicyTests(unittest.TestCase):
         self.assertIn("compatibleWith(COMPATIBILITY_PLEX)", patch)
         self.assertIn("val premiumUnlockPatch = rawResourcePatch(", patch)
 
+    def test_spotify_compatibility_is_finite_tv_required_container_and_default_on(self):
+        text = uncomment(read(MAIN / "spotify/Compatibility.kt"))
+        self.assertIn('packageName = "com.spotify.tv.android"', text)
+        self.assertIn("apkFileType = ApkFileType.APKM_REQUIRED", text)
+        self.assertIn("formFactor = FormFactor.TV", text)
+        self.assertRegex(text, r'AppTarget\(\s*version\s*=\s*"9\.1\.94\.1926",\s*versionCode\s*=\s*147600562\s*,?\s*\)')
+        self.assertEqual(1, text.count("Compatibility("))
+        self.assertNotRegex(text, r"\b(signatures|options|dependsOn)\s*[(=]")
+        patch = uncomment(read(MAIN / "spotify/HomePreviewPatch.kt"))
+        self.assertRegex(patch, r"val\s+disableHomePreviewsPatch\s*=\s*bytecodePatch\(")
+        self.assertRegex(patch, r"\bdefault\s*=\s*true\b")
+        self.assertNotRegex(patch, r"\b(dependsOn|\w+Option)\s*\(")
+        self.assertEqual({"HomePreviewPatch.kt", "HomePreviewSnapshots.kt", "HomePreviewValidation.kt", "Compatibility.kt"},
+                         {p.name for p in (MAIN / "spotify").glob("*.kt")})
+        self.assertEqual({"HomePreviewPatchTest.kt"}, {p.name for p in (TEST / "spotify").glob("*.kt")})
+
     def test_collection_validator_is_exact_not_subset(self):
         text = uncomment(read(MAIN / "tools/LoadedBundleMetadata.kt"))
         collection = block(text, "fun requireCollectionInventory(")
@@ -119,7 +137,9 @@ class CollectionSourcePolicyTests(unittest.TestCase):
         for policy in ("patch.dependencies.isEmpty()", "patch.options.isEmpty()", "patch is RawResourcePatch",
                        "patch is BytecodePatch", "compatibility.targets == listOf(AppTarget(version = null))", "compatibilities.size == 1",
                        "compatibility.apkFileType == ApkFileType.APKM", "compatibility.targets.size == 1",
-                       "SupportedAbi.entries.associateWith { 1008 }", "compatibility.formFactor == FormFactor.MOBILE"):
+                       "SupportedAbi.entries.associateWith { 1008 }", "compatibility.formFactor == FormFactor.MOBILE",
+                       "SupportedAbi.entries.associateWith { 147600562 }", "compatibility.formFactor == FormFactor.TV",
+                       "compatibility.apkFileType == ApkFileType.APKM_REQUIRED", 'target.version == "9.1.94.1926"'):
             self.assertIn(policy, text)
 
     def test_catalog_inspection_and_runtime_validate_whole_collection(self):
@@ -146,17 +166,62 @@ class CollectionSourcePolicyTests(unittest.TestCase):
         self.assertIn("patch.dependencies.map", metadata)
         self.assertNotIn("filter", block(metadata, "private fun requireInventory("))
 
-    def test_isolated_adapter_rejects_all_three_parent_definition_owners(self):
+    def test_isolated_adapter_rejects_all_four_parent_definition_owners(self):
         text = block(read(MAIN / "tools/LoadedBundleMetadata.kt"), "fun requireIsolatedDefinitionLoader(")
-        for owner in ("termius/ServerAuditorOfflineAutomationPatchKt", "termius/ServerAuditorPremiumPatchKt", "plex/PremiumUnlockPatchKt"):
+        for owner in ("termius/ServerAuditorOfflineAutomationPatchKt", "termius/ServerAuditorPremiumPatchKt", "plex/PremiumUnlockPatchKt", "spotify/HomePreviewPatchKt"):
             self.assertIn('"' + owner + '"', text)
         self.assertIn("parent.getResources(path).hasMoreElements()", text)
+        self.assertIn("parent: ClassLoader = ClassLoader.getSystemClassLoader()",
+                      read(MAIN / "tools/LoadedBundleMetadata.kt"))
 
-    def test_runtime_selections_never_apply_loaded_collection_or_plex(self):
+    def test_isolated_adapter_covers_declared_spotify_owners_and_known_generated_helpers(self):
+        # Source-only declaration coverage, NOT compiled class-family exhaustiveness.
+        # The JVM regression inspects actual directory/JAR output and probes each class.
+        # File facades exist for top-level properties/functions, not object-only files.
+        declared = set()
+        for path in (MAIN / "spotify").glob("*.kt"):
+            source = uncomment(read(path))
+            declared.update(re.findall(
+                r"(?m)^(?:(?:internal|private|public|data|enum|sealed|open|abstract)\s+)*(?:class|object)\s+(\w+)", source))
+            if re.search(r"(?m)^(?:(?:internal|private|public)\s+)*(?:val|var|fun)\s+", source):
+                declared.add(path.stem + "Kt")
+        # Nested declaration is outside the bounded top-level regex above.
+        declared.add("PreviewExecution$Descriptor")
+        generated = {
+            "PreviewEdits$WhenMappings", "PreviewExecution$executeProduction$1",
+            "CandidateSnapshots$annotations$lambda$0$$inlined$sortedBy$1",
+            "CandidateSnapshots$method$lambda$0$$inlined$sortedBy$1",
+            "CandidateSnapshots$WhenMappings",
+        }
+        self.assertTrue(declared.isdisjoint(generated))
+        text = block(read(MAIN / "tools/LoadedBundleMetadata.kt"), "fun requireIsolatedDefinitionLoader(")
+        guarded = {owner.replace(r"\$", "$") for owner in re.findall(r'"spotify/([^"\n]+)"', text)}
+        self.assertEqual(declared, guarded - generated)
+        self.assertTrue(generated <= guarded)
+        self.assertTrue({"PreviewExecution", "CompatibilityKt", "CandidateSnapshots", "PreviewAssertions"} <= guarded)
+        self.assertNotIn("Class.forName", text)
+        self.assertNotIn("loadClass", text)
+        self.assertNotRegex(read(MAIN / "tools/LoadedBundleMetadata.kt"), r"(?m)^import .*\.spotify\.")
+
+    def test_authored_helper_only_loader_regressions_are_independent(self):
+        text = read(TEST / "collection/CollectionInventoryTest.kt")
+        for name, owner in (("helperOnlyPreviewExecutionParentIsRejectedBeforeLoading", "PreviewExecution"),
+                            ("helperOnlyCompatibilityParentIsRejectedBeforeLoading", "CompatibilityKt")):
+            case = block(text, "fun " + name + "(")
+            self.assertIn('withIsolatedParentResource("spotify/' + owner + '")', case)
+            self.assertIn("requireIsolatedDefinitionLoader(parent)", case)
+            self.assertIn("assertThrows(IllegalArgumentException::class.java)", case)
+        fixture = block(text, "fun withIsolatedParentResource(")
+        self.assertIn("URLClassLoader(arrayOf(jar.toURI().toURL()), null)", fixture)
+        self.assertIn('assertNull(parent.getResource("io/github/fishyau/androidpatches/spotify/"))', fixture)
+        self.assertIn('assertNull(parent.getResource("io/github/fishyau/androidpatches/$definition.class"))', fixture)
+
+    def test_runtime_selections_never_apply_loaded_collection_plex_or_spotify(self):
         text = uncomment(read(TOOLS / "src/main/kotlin/RuntimeCheck.kt"))
         self.assertIn('loaded.single { it.name == "Server Auditor Offline Automation" }', text)
         self.assertIn('loaded.single { it.name == "Server Auditor Premium" }', text)
         self.assertNotIn('it.name == "Premium unlock"', text)
+        self.assertNotIn('it.name == "Disable Home previews"', text)
         self.assertEqual(["setOf(patch)", "selected", "setOf(makerPatch)", "setOf(premium)", "setOf(patch, premium)"],
                          re.findall(r"^\s*(?:patcher|rejected|maker|checkPremium|combined)\s*\+=\s*(.+)$", text, re.M))
         self.assertNotRegex(text, r"\b(rawResourcePatch|resourcePatch|ResourceMode)\b")
@@ -217,23 +282,43 @@ class CollectionSourcePolicyTests(unittest.TestCase):
         self.assertEqual(3, len(tests))
         self.assertEqual(2, len(projection))
         self.assertEqual(2, len(tools))
-        self.assertFalse(any("plex" in str(p) or "collection" in str(p.relative_to(REPO)) for p in main + tests))
+        self.assertFalse(any(part in str(p.relative_to(REPO)) for p in main + tests for part in ("plex", "spotify", "collection")))
         self.assertTrue(all(".termius." in name for name in classes))
         main, tests, _, _, classes = select(REPO, "collection")
         self.assertEqual(EXPECTED_MAIN, {p.relative_to(MAIN).as_posix() for p in main})
-        self.assertEqual(7, len(tests))
-        self.assertEqual(6, len(classes))
+        self.assertEqual(8, len(tests))
+        self.assertEqual(7, len(classes))
+        self.assertIn("io.github.fishyau.androidpatches.spotify.HomePreviewPatchTest", classes)
+        self.assertEqual({"spotify/HomePreviewPatchTest.kt"}, {p.relative_to(TEST).as_posix() for p in tests if "spotify" in p.parts})
         self.assertIn("io.github.fishyau.androidpatches.collection.CollectionInventoryTest", classes)
         with self.assertRaises(ValueError):
             select(REPO, "auto")
+
+    def test_checker_compilation_and_parent_classpath_remain_tools_only(self):
+        runner = read(RUNNER)
+        self.assertIn('compile_kotlin("compile-checker", tool_sources + projection, tool, runtime)', runner)
+        self.assertIn('os.pathsep.join(map(str, [tool] + runtime))', runner)
+        build = read(REPO / "patches/build.gradle.kts")
+        catalog = block(build, 'kotlin.sourceSets.named("catalogTool")')
+        self.assertIn('kotlin.srcDir("src/main/kotlin/io/github/fishyau/androidpatches/tools")', catalog)
+        self.assertNotIn("spotify", catalog)
+        self.assertNotIn("termius", catalog)
+        self.assertNotIn("plex", catalog)
+
+    def test_synthetic_auth_session_preservation_is_not_runtime_proof(self):
+        tests = read(TEST / "spotify/HomePreviewPatchTest.kt")
+        self.assertIn("syntheticSignInRefreshSignOutAndReauthenticationSentinelsRemainByteForByteUntouched", tests)
+        self.assertIn("NOT real authentication behavior", tests)
+        for sentinel in ('"signIn"', '"tokenRefresh"', '"signOut"', '"reauthenticate"'):
+            self.assertIn(sentinel, tests)
 
     def test_synthetic_extra_missing_or_unreviewed_sources_fail_closed(self):
         select, names = source_selector()
         with tempfile.TemporaryDirectory(prefix="collection-static-") as temporary:
             root = Path(temporary)
             self.assertFalse(root.is_relative_to(REPO))
-            for source_set, entries in (("main", names["TERMIUS_MAIN"] + names["PLEX_MAIN"] + names["PROJECTION"]),
-                                        ("test", names["TERMIUS_TESTS"] + names["PLEX_TESTS"] + names["COLLECTION_TESTS"])):
+            for source_set, entries in (("main", names["TERMIUS_MAIN"] + names["PLEX_MAIN"] + names["SPOTIFY_MAIN"] + names["PROJECTION"]),
+                                        ("test", names["TERMIUS_TESTS"] + names["PLEX_TESTS"] + names["SPOTIFY_TESTS"] + names["COLLECTION_TESTS"])):
                 for name in entries:
                     path = root / f"patches/src/{source_set}/kotlin" / BASE / name
                     path.parent.mkdir(parents=True, exist_ok=True)
@@ -283,7 +368,7 @@ class CollectionSourcePolicyTests(unittest.TestCase):
     def test_authored_whole_collection_loader_and_mutation_tests_present_not_run(self):
         text = read(TEST / "collection/CollectionInventoryTest.kt")
         for fragment in ("premiumUnlockPatch", "loadPatchesFromJar(setOf(jar))", "requireCollectionInventory(loaded)",
-                         "assertEquals(3, loaded.size)", "projectDependencies(loaded)", "resourcePatch(name =",
+                         "assertEquals(4, loaded.size)", "disableHomePreviewsPatch", "projectDependencies(loaded)", "resourcePatch(name =",
                          "dependency = true", "option = true", "default = !accepted[index].default", "compatibilities = emptyList()"):
             self.assertIn(fragment, text)
         narrow = read(TEST / "termius/PatchInventoryTest.kt")

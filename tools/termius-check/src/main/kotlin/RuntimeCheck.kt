@@ -319,7 +319,7 @@ fun main(args: Array<String>) = runBlocking {
     val parsedCatalog = JsonParser.parseString(catalog.readText()).asJsonObject
     check(parsedCatalog.getAsJsonArray("patches") == definitions) { "Catalog differs from loaded definitions" }
     JarFile(bundle).use { check(parsedCatalog.get("version").asString == it.manifest.mainAttributes.getValue("Version")) }
-    println("Validated exactly three default-on collection definitions; applying only the two Termius patches, alone and combined")
+    println("Validated exactly four default-on collection definitions; applying only the two Termius patches, alone and combined")
     println("Default co-selection is metadata, not combined Android runtime acceptance")
     println("Plex RAW-resource application is excluded; this bytecode checker does not support it")
     println("Runtime: morphe-patcher 2.3.0; base APK only, NOT an installable app")
@@ -503,9 +503,10 @@ fun main(args: Array<String>) = runBlocking {
         "work_directory" to work.absolutePath,
         "bundle_sha256" to bundleHash, "catalog_sha256" to catalogHash, "input_base_sha256" to inputHash,
         "patcher_version" to "2.3.0", "patches" to definitions, "dependencies" to projectDependencies(loaded),
-        "definition_scope" to "exact_three_collection_definitions",
+        "definition_scope" to "exact_four_collection_definitions",
         "application_scope" to "Termius_only_singletons_and_combined",
         "plex_application" to "not_supported_not_attempted",
+        "spotify_application" to "not_supported_not_attempted",
         "selections" to selections, "negative_cases" to listOf("repeat", "premium-repeat") + fixtures.map { it.name },
         "negative_results" to negativeResults,
         "comparison_scope" to mapOf("kind" to "selected_classes_only_not_whole_app", "methods" to originals.size,

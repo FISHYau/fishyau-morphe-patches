@@ -28,6 +28,12 @@ def synthetic_catalog(version="9.8.7"):
                                             "isExperimental": False, "minSdk": None, "description": None}]}
         patches.append({"name": name, "description": "Synthetic metadata only", "default": True,
                         "category": None, "compatiblePackages": [app], "options": []})
+    patches.append({"name": "Disable Home previews", "description": "Synthetic metadata only", "default": True,
+                    "category": None, "options": [], "compatiblePackages": [{
+                        "packageName": "com.spotify.tv.android", "name": "Spotify TV", "description": None,
+                        "apkFileType": "APKM_REQUIRED", "appIconColor": None, "signatures": None, "formFactor": "TV",
+                        "targets": [{"version": "9.1.94.1926", "versionCodes": {abi: 147600562 for abi in ("ARM64_V8A", "ARMEABI_V7A", "X86_64", "X86")},
+                                     "isExperimental": False, "minSdk": None, "description": None}]}]})
     return {"version": version, "patches": patches}
 
 
@@ -89,7 +95,7 @@ class FinalBundleContractTest(unittest.TestCase):
             checker.preflight(self.formats, self.bundle, self.catalog)
 
     def test_wrong_patch_default_and_inventory_rejected(self):
-        for change in (lambda p: p[0].update(default=False), lambda p: p.pop(),
+        for change in (lambda p: p[0].update(default=False), lambda p: p[-1].update(default=False), lambda p: p.pop(),
                        lambda p: p[0].update(name="Unexpected patch")):
             catalog = synthetic_catalog()
             change(catalog["patches"])
@@ -124,12 +130,29 @@ class FinalBundleContractTest(unittest.TestCase):
                                        "io/github/fishyau/androidpatches/plex/shared/Constants.class",
                                        "io/github/fishyau/androidpatches/plex/PremiumUnlockPatchKt.class",
                                        "io/github/fishyau/androidpatches/termius/ServerAuditorPremiumPatchKt.class",
-                                       "io/github/fishyau/androidpatches/termius/ServerAuditorOfflineAutomationPatchKt.class")):
+                                       "io/github/fishyau/androidpatches/termius/ServerAuditorOfflineAutomationPatchKt.class",
+                                       "io/github/fishyau/androidpatches/spotify/HomePreviewPatchKt.class")):
             jar = self.root / f"invalid-parent-{index}.jar"
             with zipfile.ZipFile(jar, "w") as archive:
                 archive.writestr(entry, b"not executable")
             with self.assertRaisesRegex(ValueError, "parent"):
                 checker.isolated_classpath([jar])
+
+    def test_spotify_helper_only_parents_rejected_without_directory_entries(self):
+        # Each parent contains only this helper, never the patch definition owner.
+        # Include an unknown/generated owner to require the whole package prefix.
+        for owner in ("PreviewExecution", "CompatibilityKt", "CandidateSnapshots", "PreviewAssertions",
+                      "PreviewPins", "PreviewRole", "PreviewEdit", "PreviewEdits", "PreviewSpec",
+                      "PreviewExecution$Descriptor", "FutureHelper$Generated"):
+            with self.subTest(owner=owner):
+                jar = self.root / f"spotify-helper-{owner}.jar"
+                entry = f"io/github/fishyau/androidpatches/spotify/{owner}.class"
+                with zipfile.ZipFile(jar, "w") as archive:
+                    archive.writestr(entry, b"inert resource, never loaded")
+                with zipfile.ZipFile(jar) as archive:
+                    self.assertEqual([entry], archive.namelist())
+                with self.assertRaisesRegex(ValueError, "parent"):
+                    checker.isolated_classpath([jar])
 
     def test_tools_only_parent_is_accepted_without_inventory_report(self):
         jar = self.root / "tools-only.jar"
@@ -150,12 +173,19 @@ class FinalBundleContractTest(unittest.TestCase):
     def test_aggregate_success_without_named_cases_rejected(self):
         selected = checker.preflight(self.formats, self.bundle, self.catalog)
         report = dict(selected, schema="plex-final-bundle-native-v1", status=checker.SUCCESS,
-                      actual_definition="exact_three_loaded_metadata_catalog_verified",
+                      actual_definition="exact_four_loaded_metadata_catalog_verified",
                       resource_execution="loaded_plex_raw_resource_patch_all_named_cases_verified",
                       loader="app.morphe.patcher.patch.loadPatchesFromJar", executed_patch_names=["Premium unlock"],
                       classpath_isolation="definition_and_production_plex_helper_resources_absent",
                       started_at="2026-11-09T00:00:00Z", finished_at="2026-11-09T00:00:01Z", elapsed_ns=10)
         with self.assertRaisesRegex(ValueError, "named observations"):
+            checker.validate_native(report, self.root, selected)
+
+    def test_legacy_three_definition_observation_rejected(self):
+        selected = checker.preflight(self.formats, self.bundle, self.catalog)
+        report = dict(selected, schema="plex-final-bundle-native-v1", status=checker.SUCCESS,
+                      actual_definition="exact_three_loaded_metadata_catalog_verified")
+        with self.assertRaisesRegex(ValueError, "actual loader not observed"):
             checker.validate_native(report, self.root, selected)
 
     def test_native_wrong_artifact_rejected(self):

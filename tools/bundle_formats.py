@@ -28,7 +28,8 @@ VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?\Z")
 DATE = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?\Z", re.ASCII)
 ABI = {"ARM64_V8A", "ARMEABI_V7A", "X86_64", "X86"}
 COLLECTION_PATCHES = {"Server Auditor Offline Automation": True,
-                      "Server Auditor Premium": True, "Premium unlock": True}
+                      "Server Auditor Premium": True, "Premium unlock": True,
+                      "Disable Home previews": True}
 
 
 def require(condition, message):
@@ -250,7 +251,7 @@ def collection_inventory(catalog, version):
     if "NOTE" in catalog:
         text(catalog["NOTE"], "catalog note")
     patches = catalog.get("patches")
-    require(isinstance(patches, list) and len(patches) == 3, "exact three collection definitions required")
+    require(isinstance(patches, list) and len(patches) == len(COLLECTION_PATCHES), "exact four collection definitions required")
     names = {}
     for patch in patches:
         exact(patch, "name description default category compatiblePackages options", "collection patch")
@@ -266,24 +267,31 @@ def collection_inventory(catalog, version):
         require(isinstance(app, dict) and {"packageName", "targets"} <= set(app) <= {"packageName", "name", "description", "apkFileType", "appIconColor", "signatures", "formFactor", "targets"}, "compatibility fields mismatch")
         for key in ("name", "description", "apkFileType", "appIconColor", "formFactor"):
             require(app.get(key) is None or isinstance(app[key], str), "invalid compatibility text")
-        require(app.get("apkFileType") == "APKM", "APKM compatibility required")
-        if app.get("signatures") is not None:
-            require(isinstance(app["signatures"], list) and app["signatures"], "invalid APK signatures")
-            for signature in app["signatures"]:
-                sha(signature)
+        spotify = name == "Disable Home previews"
+        display_name, icon_color = (("Spotify TV", None) if spotify else
+                                    ("Plex", "#282A2D") if name == "Premium unlock" else
+                                    ("Server Auditor", "#1A73E8"))
+        require(app.get("name") == display_name and app.get("appIconColor") == icon_color, "per-app display metadata mismatch")
+        require(app.get("apkFileType") == ("APKM_REQUIRED" if spotify else "APKM"), "per-app container policy mismatch")
+        require(app.get("formFactor") == ("TV" if spotify else "MOBILE"), "per-app form factor mismatch")
+        require(app.get("signatures") is None or app["signatures"] == [], "collection signatures are unsupported")
         if name == "Premium unlock":
             # Empty means package-only compatibility, NOT proof of all versions.
             require(app["packageName"] == "com.plexapp.android" and app["targets"] == [], "intentional Plex version-unpinned targets=[] required")
             continue
-        require(app["packageName"] == "com.server.auditor.ssh.client", "Termius package mismatch")
+        if spotify:
+            package, target_version, code = "com.spotify.tv.android", "9.1.94.1926", 147600562
+        else:
+            require(name in {"Server Auditor Offline Automation", "Server Auditor Premium"}, "unknown finite-target patch")
+            package, target_version, code = "com.server.auditor.ssh.client", "8.0.1", 1008
+        require(app["packageName"] == package, "finite-target package mismatch")
         targets = app["targets"]
-        require(isinstance(targets, list) and len(targets) == 1, "one finite Termius target required")
+        require(isinstance(targets, list) and len(targets) == 1, "one finite target required")
         target = targets[0]
         require(isinstance(target, dict) and {"version", "versionCodes", "isExperimental"} <= set(target) <= {"version", "versionCodes", "isExperimental", "minSdk", "description"}, "target fields mismatch")
-        require(target.get("description") is None or isinstance(target["description"], str), "invalid target description")
-        require(target.get("minSdk") is None or type(target["minSdk"]) is int and target["minSdk"] > 0, "invalid minimum SDK")
-        require(target["version"] == "8.0.1" and target["isExperimental"] is False, "finite nonexperimental Termius 8.0.1 required")
+        require(target.get("description") is None and target.get("minSdk") is None, "unexpected target constraints")
+        require(target["version"] == target_version and target["isExperimental"] is False, "finite nonexperimental version required")
         codes = target["versionCodes"]
-        require(isinstance(codes, dict) and codes and set(codes) <= ABI and all(type(c) is int and c == 1008 for c in codes.values()), "Termius ABI/code1008 required")
-    require(names == COLLECTION_PATCHES, "exact three collection names/defaults required")
+        require(isinstance(codes, dict) and set(codes) == ABI and all(type(c) is int and c == code for c in codes.values()), "complete scalar-constructor ABI/code mapping required")
+    require(names == COLLECTION_PATCHES, "exact four collection names/defaults required")
     return sorted(patches, key=lambda patch: patch["name"])

@@ -34,6 +34,7 @@ fun requireCollectionInventory(patches: Collection<Patch>) {
         "Server Auditor Offline Automation" to true,
         "Server Auditor Premium" to true,
         "Premium unlock" to true,
+        "Disable Home previews" to true,
     ))
 }
 
@@ -54,11 +55,22 @@ private fun requireInventory(patches: Collection<Patch>, defaults: Map<String, B
         val compatibilities = requireNotNull(patch.compatibility)
         require(compatibilities.size == 1) { "Exactly one package is required: ${patch.name}" }
         val compatibility = compatibilities.single()
-        require(compatibility.apkFileType == ApkFileType.APKM)
         require(compatibility.signatures.isNullOrEmpty())
-        // Morphe 2.3.0's public constructor defaults to MOBILE, not null.
-        require(compatibility.formFactor == FormFactor.MOBILE)
-        if (patch.name == "Premium unlock") {
+        if (patch.name == "Disable Home previews") {
+            require(patch is BytecodePatch) { "Spotify preview patch must remain bytecode-only" }
+            require(compatibility.apkFileType == ApkFileType.APKM_REQUIRED)
+            require(compatibility.formFactor == FormFactor.TV)
+            require(compatibility.packageName == "com.spotify.tv.android" && compatibility.name == "Spotify TV")
+            require(compatibility.appIconColor == null)
+            require(compatibility.targets.size == 1) { "Exactly one finite Spotify TV target is required" }
+            val target = compatibility.targets.single()
+            require(target.version == "9.1.94.1926" &&
+                target.versionCodes == SupportedAbi.entries.associateWith { 147600562 })
+            require(!target.isExperimental && target.minSdk == null && target.description == null)
+        } else if (patch.name == "Premium unlock") {
+            require(compatibility.apkFileType == ApkFileType.APKM)
+            // Morphe 2.3.0's public constructor defaults to MOBILE, not null.
+            require(compatibility.formFactor == FormFactor.MOBILE)
             require(patch is RawResourcePatch) { "Plex must remain RAW resource, not bytecode or decoded resources" }
             require(compatibility.packageName == "com.plexapp.android" && compatibility.name == "Plex")
             require(compatibility.appIconColor == 0x282A2D)
@@ -67,9 +79,13 @@ private fun requireInventory(patches: Collection<Patch>, defaults: Map<String, B
             require(compatibility.targets == listOf(AppTarget(version = null))) {
                 "Plex must retain exactly the default version-unpinned target"
             }
-        } else {
+        } else if (patch.name in setOf("Server Auditor Offline Automation", "Server Auditor Premium")) {
             require(patch is BytecodePatch) { "Termius must remain bytecode-only" }
+            require(compatibility.apkFileType == ApkFileType.APKM)
+            require(compatibility.formFactor == FormFactor.MOBILE)
             requireTermiusCompatibility(compatibility)
+        } else {
+            error("Unknown collection patch: ${patch.name}")
         }
     }
 }
@@ -85,17 +101,35 @@ private fun requireTermiusCompatibility(compatibility: Compatibility) {
     require(!target.isExperimental && target.minSdk == null && target.description == null)
 }
 
-/** Fail before loading if parent-first resolution could substitute compiled source patches. */
-fun requireIsolatedDefinitionLoader() {
-    val parent = ClassLoader.getSystemClassLoader()
+/** Fail before loading if parent-first resolution could substitute definitions or Spotify helpers. */
+fun requireIsolatedDefinitionLoader(parent: ClassLoader = ClassLoader.getSystemClassLoader()) {
+    // Probe exact class resources, not package directory entries: helper-only JARs
+    // need not contain those entries. String names keep adapters/Termius-only tests
+    // independent of Spotify implementation compilation or class initialization.
     listOf(
         "termius/ServerAuditorOfflineAutomationPatchKt",
         "termius/ServerAuditorPremiumPatchKt",
         "plex/PremiumUnlockPatchKt",
-    ).forEach { definition ->
-        val path = "io/github/fishyau/androidpatches/$definition.class"
+        "spotify/HomePreviewPatchKt",
+        "spotify/CompatibilityKt",
+        "spotify/PreviewExecution",
+        "spotify/PreviewExecution\$executeProduction\$1",
+        "spotify/PreviewExecution\$Descriptor",
+        "spotify/PreviewSpec",
+        "spotify/PreviewPins",
+        "spotify/PreviewRole",
+        "spotify/PreviewEdit",
+        "spotify/PreviewEdits",
+        "spotify/PreviewEdits\$WhenMappings",
+        "spotify/CandidateSnapshots",
+        "spotify/CandidateSnapshots\$annotations\$lambda\$0\$\$inlined\$sortedBy\$1",
+        "spotify/CandidateSnapshots\$method\$lambda\$0\$\$inlined\$sortedBy\$1",
+        "spotify/CandidateSnapshots\$WhenMappings",
+        "spotify/PreviewAssertions",
+    ).forEach { owner ->
+        val path = "io/github/fishyau/androidpatches/$owner.class"
         require(!parent.getResources(path).hasMoreElements()) {
-            "Patch definitions are present on the parent classpath; run the isolated catalog/checker adapter, not main runtimeClasspath"
+            "Patch definitions or production Spotify helpers are present on the parent classpath; run the isolated catalog/checker adapter, not main runtimeClasspath"
         }
     }
 }

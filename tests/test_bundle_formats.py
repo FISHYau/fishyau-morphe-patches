@@ -20,15 +20,20 @@ WHEN = "2026-11-09T10:00:00"
 
 def catalog_fixture(version="0.2.7-test.1"):
     termius = {"packageName": "com.server.auditor.ssh.client", "name": "Server Auditor",
-               "description": None, "apkFileType": "APKM", "appIconColor": None,
-               "signatures": None, "formFactor": None, "targets": [
-                   {"version": "8.0.1", "versionCodes": {"ARM64_V8A": 1008},
+               "description": None, "apkFileType": "APKM", "appIconColor": "#1A73E8",
+               "signatures": None, "formFactor": "MOBILE", "targets": [
+                   {"version": "8.0.1", "versionCodes": {abi: 1008 for abi in f.ABI},
                     "isExperimental": False, "minSdk": None, "description": None}]}
-    plex = dict(termius, packageName="com.plexapp.android", name="Plex", targets=[])
+    plex = dict(termius, packageName="com.plexapp.android", name="Plex", appIconColor="#282A2D", targets=[])
+    spotify = dict(termius, packageName="com.spotify.tv.android", name="Spotify TV", appIconColor=None,
+                   apkFileType="APKM_REQUIRED", formFactor="TV", targets=[
+                       {"version": "9.1.94.1926", "versionCodes": {abi: 147600562 for abi in f.ABI},
+                        "isExperimental": False, "minSdk": None, "description": None}])
     return {"version": version, "patches": [
-        {"name": name, "description": "Synthetic format fixture only", "default": True,
-         "category": None, "compatiblePackages": [copy.deepcopy(plex if name == "Premium unlock" else termius)],
-         "options": []} for name in f.COLLECTION_PATCHES]}
+        {"name": name, "description": "Synthetic format fixture only", "default": default,
+         "category": None, "compatiblePackages": [copy.deepcopy(
+             plex if name == "Premium unlock" else spotify if name == "Disable Home previews" else termius)],
+         "options": []} for name, default in f.COLLECTION_PATCHES.items()]}
 
 
 def bundle_fixture(version="0.2.7-test.1", *, extra=(), dex=b"dex\n039\0SYNTHETIC INVALID DEX BODY", manifest=None):
@@ -202,11 +207,15 @@ class FormatTests(unittest.TestCase):
         catalog = catalog_fixture()
         patches = f.collection_inventory(catalog, catalog["version"])
         self.assertEqual([patch["name"] for patch in patches], sorted(f.COLLECTION_PATCHES))
-        self.assertEqual(patches[0]["compatiblePackages"][0]["targets"], [])
+        self.assertEqual(next(p for p in patches if p["name"] == "Premium unlock")["compatiblePackages"][0]["targets"], [])
+        self.assertEqual({p["name"]: p["default"] for p in patches}, {
+            "Server Auditor Offline Automation": True, "Server Auditor Premium": True,
+            "Premium unlock": True, "Disable Home previews": True})
         for mutate in (
             lambda c: c.update(version="wrong"),
             lambda c: c["patches"].pop(),
             lambda c: c["patches"][0].update(default=False),
+            lambda c: next(p for p in c["patches"] if p["name"] == "Disable Home previews").update(default=False),
             lambda c: c["patches"][0].update(default=1),
             lambda c: c["patches"][0].update(options=[{}]),
             lambda c: c["patches"][0]["compatiblePackages"][0].update(targets=[]),
@@ -219,6 +228,69 @@ class FormatTests(unittest.TestCase):
             mutate(bad)
             with self.subTest(catalog=bad), self.assertRaises(ValueError):
                 f.collection_inventory(bad, catalog["version"])
+
+    def test_every_patch_default_container_form_factor_and_inventory_fail_closed(self):
+        original = catalog_fixture()
+        for index, patch in enumerate(original["patches"]):
+            app = patch["compatiblePackages"][0]
+            mutations = [
+                lambda p: p.update(default=not patch["default"]),
+                lambda p: p.update(default=0),
+                lambda p: p.update(name="Unrelated"),
+                lambda p: p.update(name=None),
+                lambda p: p.update(options=[{}]),
+                lambda p: p.update(dependencies=[]),  # Not part of the public DTO; actual dependencies checked by loader.
+                lambda p: p.update(compatiblePackages=[]),
+                lambda p: p.update(compatiblePackages=[app, app]),
+                lambda p: p["compatiblePackages"][0].update(packageName="com.example.other"),
+                lambda p: p["compatiblePackages"][0].update(name="Unexpected app"),
+                lambda p: p["compatiblePackages"][0].update(appIconColor="#FFFFFF"),
+                lambda p: p["compatiblePackages"][0].update(signatures=["0" * 64]),
+            ]
+            for container in (None, "APK", "APKM", "APKM_REQUIRED", "APKS", "unknown"):
+                if container != app["apkFileType"]:
+                    mutations.append(lambda p, value=container: p["compatiblePackages"][0].update(apkFileType=value))
+            for form in (None, "MOBILE", "TV", "WEARABLE", "AUTOMOTIVE", "unknown"):
+                if form != app["formFactor"]:
+                    mutations.append(lambda p, value=form: p["compatiblePackages"][0].update(formFactor=value))
+            for mutate in mutations:
+                bad = copy.deepcopy(original)
+                mutate(bad["patches"][index])
+                with self.subTest(index=index, patch=bad["patches"][index]), self.assertRaises(ValueError):
+                    f.collection_inventory(bad, original["version"])
+            for entries in (original["patches"][:index] + original["patches"][index + 1:],
+                            original["patches"] + [patch],
+                            [patch] * len(original["patches"])):
+                with self.subTest(index=index, entries=entries), self.assertRaises(ValueError):
+                    f.collection_inventory(dict(original, patches=entries), original["version"])
+
+    def test_every_finite_target_field_and_scalar_abi_mapping_is_constrained(self):
+        original = catalog_fixture()
+        for index, patch in enumerate(original["patches"]):
+            app = patch["compatiblePackages"][0]
+            if patch["name"] == "Premium unlock":
+                continue
+            target = app["targets"][0]
+            mutations = [lambda a: a.update(targets=[]), lambda a: a.update(targets=[target, target])]
+            for field, value in (("version", None), ("version", "wrong"), ("isExperimental", True),
+                                 ("isExperimental", 0), ("minSdk", 24), ("description", "unexpected"),
+                                 ("versionCodes", {}), ("versionCodes", {"UNKNOWN": 147600562})):
+                mutations.append(lambda a, field=field, value=value: a["targets"][0].update({field: value}))
+            for abi in f.ABI:
+                for codes in ({key: code for key, code in target["versionCodes"].items() if key != abi},
+                              dict(target["versionCodes"], **{abi: 1}),
+                              dict(target["versionCodes"], **{abi: True})):
+                    mutations.append(lambda a, value=codes: a["targets"][0].update(versionCodes=value))
+            # No cross-app finite-target substitution or package-only broadening.
+            other = next(p for p in original["patches"] if p["name"] != patch["name"] and
+                         p["compatiblePackages"][0]["packageName"] != app["packageName"] and
+                         p["compatiblePackages"][0]["targets"])
+            mutations.append(lambda a: a.update(targets=other["compatiblePackages"][0]["targets"]))
+            for mutate in mutations:
+                bad = copy.deepcopy(original)
+                mutate(bad["patches"][index]["compatiblePackages"][0])
+                with self.subTest(index=index, app=bad["patches"][index]["compatiblePackages"]), self.assertRaises(ValueError):
+                    f.collection_inventory(bad, original["version"])
 
 
 if __name__ == "__main__":

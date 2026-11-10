@@ -9,12 +9,17 @@ An independent Android patch collection **compatible with Morphe**. Not affiliat
 | **Server Auditor Offline Automation** | On | Local startup-snippet Automation without a Termius account. For isolated Automation, deselect Premium; global authentication and Pro state stay unchanged. Account-independent does not mean network-free SSH. |
 | **Server Auditor Premium** | On | Optional legacy client Pro title/expiry override; does not change storage or server entitlements. |
 | **Premium unlock** | On | Plex client-side premium-check edits in a Hermes v96 bundle, guarded by required function/signature checks. |
+| **Disable Home previews** | **On** | Experimental SpotifyTV Home-preview-only edits, guarded by exact semantic/physical pins. Preserves static-artwork paths; does not disable the separate Home AutoNavigate timer. Vendor/runtime verification remains pending. |
 
 The Server Auditor patches target `com.server.auditor.ssh.client` **8.0.1 / code 1008**, APKM. Plex targets `com.plexapp.android`, APKM, with intentionally unpinned versions; this is not a guarantee for every version or device. Plex also conditionally adjusts split-install attributes in a decoded text manifest. Neither patch provisions backend entitlements.
 
 Both Termius defaults were requested on 2026-11-09; Plex is also selected by default. The user confirmed Termius working on 2026-11-09 and Plex working on Android and Android TV on 2026-11-10. These are user confirmations, not newly executed tests for every future bundle. Declared compatibility is unchanged.
 
-There are no Universal or SpotifyTV patches here. No vendor applications, extracted application code or patched APKs are distributed.
+The SpotifyTV patch declares only `com.spotify.tv.android` **9.1.94.1926 / code 147600562**, **APKM_REQUIRED**, **TV**, and is selected by default at the user's request on 2026-11-10. The default-on revision was built locally as **0.1.1-dev.2** and passed source/JVM tests plus exact-MPP JVM inventory/catalog verification; the earlier **0.1.1-dev.1** artifact was default-off. AndroidLab runtime testing remains pending. Its three same-width instruction edits are confined to two Home-preview methods; seven semantic and seven physical original-method pins reject drift before mutation. Declared compatibility is not independent input authentication, successful vendor application or runtime proof.
+
+**Account authentication must remain functional.** Spotify sign-in, authenticated sessions/token refresh, sign-out and reauthentication must continue to work normally. This patch must never bypass, disable or fabricate authentication or backend entitlements. Full-map preservation and synthetic authentication-code sentinels constrain code changes, but do not prove working login. Authorized baseline/patched authentication and playback checks are required before claiming runtime completion; signing-related authentication failures are failures, not reasons to bypass authentication.
+
+There are no Universal patches here. No vendor applications, full extracted vendor method dumps or patched APKs are distributed.
 
 ## Develop and test locally
 
@@ -55,7 +60,7 @@ No placeholder live manifest is included. Hosted discovery/download/update must 
 
 ## Layout and attribution
 
-- `patches/`: three patch implementations, validator/Hermes/inventory tests and isolated catalog tooling.
+- `patches/`: four patch implementations, validator/Hermes/preview/inventory tests and isolated catalog tooling.
 - `tools/`: local artifact-format, delivery and app-specific checking tools.
 - `.claude/skills/run-android-morphe/`: inspection, build, assembly and owned-emulator tooling.
 - `docs/`: operational instructions, compatibility and historical provenance.

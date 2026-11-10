@@ -23,7 +23,7 @@ Run Python with `-I -B` from trusted code, never from an archive/decompiler dire
 
 ## Collection checks and requested delivery
 
-For the three-patch collection, use ordinary local checks rather than the retired release-evidence pipeline:
+For the four-patch collection (all defaults on, including experimental Spotify Home previews), use ordinary local checks rather than the retired release-evidence pipeline:
 
 - Run ordinary local source/unit tests. Build the actual Android MPP with the official `:patches:buildAndroid` task (through `driver.py build`, using an installed JDK21 image and a NEW external output). Generate the catalog from that exact existing MPP without rebuilding it; JVM development/test JARs are not Manager bundles.
 - Use `tools/termius-check/run_jvm_checks.py --scope collection` with explicit installed JDK21/cache paths and NEW external outputs. Follow its README for isolated same-MPP inventory and Termius structural checks; use `tools/plex-check/final_bundle.py` for same-MPP loading and synthetic resource checks. Report only checks actually executed and their limits.

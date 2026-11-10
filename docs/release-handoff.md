@@ -10,6 +10,8 @@ Select the resulting Android `.mpp` and matching `patches-list.json` explicitly.
 
 Report actual test results and limitations. The user has already confirmed Termius and Plex Android/Android TV behavior. Do not reopen that acceptance or misrepresent it as a new run.
 
+SpotifyTV `Disable Home previews` is experimental, preview-only and default-on at the user's request on 2026-11-10. The default-on revision was built locally as **0.1.1-dev.2**: 123 Python tests, 144 collection JVM tests, 144 Android-build tests, exact-MPP JVM inventory/catalog checks and 23 same-MPP Plex synthetic resource cases passed. These overlapping checks are not additive coverage or vendor/runtime proof; earlier default-off artifact results remain historical. Do not represent it as a complete Home autoplay fix: the separate AutoNavigate timer is unchanged. **Account authentication must remain functional**, including sign-in, session refresh, sign-out and reauthentication; no authentication bypass or backend-entitlement changes are allowed. Synthetic/source/MPP checks do not establish those runtime behaviors. Disclose any unexecuted vendor, artwork, playback and authentication checks. This is a correctness requirement for claiming runtime completion, not a new private-report/reviewer publication gate. Account access and Spotify signing remain separately authorized.
+
 ## 2. Preview locally
 
 From the repository root, with existing `gh` available for a later publish:
@@ -20,7 +22,7 @@ python -I -B tools/publish.py --repository FISHYau/fishyau-morphe-patches --vers
 
 Replace placeholders with explicit paths and a new version. Default mode validates locally and makes no remote writes. Use a different NEW output directory for the later publish invocation; do not reuse a failed/partial run.
 
-The helper checks Android bundle metadata, unsigned bundle structure, version and current three-patch catalog, then generates the ordinary Manager manifest. It does not claim app runtime or hosted-source success. Do not advertise a public key for an unsigned bundle.
+The helper checks Android bundle metadata, unsigned bundle structure, version and the current four-patch catalog (Spotify, Termius and Plex defaults on), then generates the ordinary Manager manifest. It does not claim app runtime or hosted-source success. Do not advertise a public key for an unsigned bundle.
 
 ## 3. Publish when requested
 

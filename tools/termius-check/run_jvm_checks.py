@@ -3,7 +3,7 @@
 Not a Gradle collection build, Android MPP build, Android load, or device test.
 Run Python with -I -B. All generated files belong in a NEW external directory.
 --scope termius compiles Termius definitions/tests and the metadata adapter;
---scope collection includes all three definitions and Plex tests. Source selection
+--scope collection includes all four definitions and Plex/Spotify tests. Source selection
 is not execution approval and never overrides a new tool-enforced denial.
 """
 import argparse
@@ -42,6 +42,8 @@ TERMIUS_MAIN = (
     "termius/BytecodeLayout.kt", "termius/PremiumPatchValidation.kt", "termius/OfflineAutomationValidation.kt",
 )
 PLEX_MAIN = ("plex/PremiumUnlockPatch.kt", "plex/shared/Constants.kt", "plex/shared/HermesBytecode.kt")
+SPOTIFY_MAIN = ("spotify/HomePreviewPatch.kt", "spotify/HomePreviewSnapshots.kt", "spotify/HomePreviewValidation.kt", "spotify/Compatibility.kt")
+SPOTIFY_TESTS = ("spotify/HomePreviewPatchTest.kt",)
 PROJECTION = ("tools/LoadedBundleMetadata.kt", "tools/PatchListGenerator.kt")
 TERMIUS_TESTS = ("termius/OfflineAutomationValidationTest.kt", "termius/PremiumPatchValidationTest.kt", "termius/PatchInventoryTest.kt")
 PLEX_TESTS = ("plex/SyntheticHermes.kt", "plex/HermesBytecodeTest.kt", "plex/PremiumUnlockPatchTest.kt")
@@ -55,11 +57,11 @@ def select_sources(repo, scope):
     package = "io/github/fishyau/androidpatches"
     main_root = repo / "patches/src/main/kotlin" / package
     test_root = repo / "patches/src/test/kotlin" / package
-    expected = {main_root / name for name in TERMIUS_MAIN + PLEX_MAIN + PROJECTION}
+    expected = {main_root / name for name in TERMIUS_MAIN + PLEX_MAIN + SPOTIFY_MAIN + PROJECTION}
     actual = set((repo / "patches/src/main/kotlin").rglob("*.kt"))
     if actual != expected:
-        raise ValueError("Main source inventory differs from the reviewed exact-three allowlist")
-    expected_tests = {test_root / name for name in TERMIUS_TESTS + PLEX_TESTS + COLLECTION_TESTS}
+        raise ValueError("Main source inventory differs from the reviewed exact-four allowlist")
+    expected_tests = {test_root / name for name in TERMIUS_TESTS + PLEX_TESTS + SPOTIFY_TESTS + COLLECTION_TESTS}
     if set((repo / "patches/src/test/kotlin").rglob("*.kt")) != expected_tests:
         raise ValueError("Test source inventory differs from the reviewed scope allowlist")
     projection = [main_root / name for name in PROJECTION]
@@ -67,9 +69,9 @@ def select_sources(repo, scope):
     test_sources = [test_root / name for name in TERMIUS_TESTS]
     test_classes = ["termius.OfflineAutomationValidationTest", "termius.PremiumPatchValidationTest", "termius.PatchInventoryTest"]
     if scope == "collection":
-        main_sources += [main_root / name for name in PLEX_MAIN]
-        test_sources += [test_root / name for name in PLEX_TESTS + COLLECTION_TESTS]
-        test_classes += ["plex.HermesBytecodeTest", "plex.PremiumUnlockPatchTest", "collection.CollectionInventoryTest"]
+        main_sources += [main_root / name for name in PLEX_MAIN + SPOTIFY_MAIN]
+        test_sources += [test_root / name for name in PLEX_TESTS + SPOTIFY_TESTS + COLLECTION_TESTS]
+        test_classes += ["plex.HermesBytecodeTest", "plex.PremiumUnlockPatchTest", "spotify.HomePreviewPatchTest", "collection.CollectionInventoryTest"]
     tool_root = repo / "tools/termius-check/src/main/kotlin"
     tool_sources = sorted(tool_root.rglob("*.kt"))
     if set(tool_sources) != {tool_root / "InspectBundle.kt", tool_root / "RuntimeCheck.kt"}:
@@ -80,7 +82,7 @@ def select_sources(repo, scope):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scope", choices=("termius", "collection"), required=True,
-                        help="Required; collection includes Plex compilation/initialization/tests; selection is not approval")
+                        help="Required; collection includes Plex/Spotify compilation/initialization/tests; selection is not approval")
     parser.add_argument("--jdk", type=Path, required=True)
     parser.add_argument("--cache-root", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)

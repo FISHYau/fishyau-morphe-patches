@@ -22,6 +22,7 @@ FORBIDDEN = (
     "io/github/fishyau/androidpatches/termius/ServerAuditorOfflineAutomationPatchKt",
     "io/github/fishyau/androidpatches/termius/ServerAuditorPremiumPatchKt",
     "io/github/fishyau/androidpatches/plex/",
+    "io/github/fishyau/androidpatches/spotify/",
 )
 CASE_NAMES = {
     "flip_JStrictEqual", "flip_JStrictEqualLong", "flip_JStrictNotEqual", "flip_JStrictNotEqualLong",
@@ -133,7 +134,7 @@ def validate_native(report, out, inputs):
     require(report.get("schema") == "plex-final-bundle-native-v1" and report.get("status") == SUCCESS, "native execution did not complete")
     for key in ("version", "bundle_sha256", "catalog_sha256"):
         require(report.get(key) == inputs[key], "native input mismatch")
-    require(report.get("actual_definition") == "exact_three_loaded_metadata_catalog_verified", "actual loader not observed")
+    require(report.get("actual_definition") == "exact_four_loaded_metadata_catalog_verified", "actual loader not observed")
     require(report.get("resource_execution") == "loaded_plex_raw_resource_patch_all_named_cases_verified", "loaded resource execution not observed")
     require(report.get("loader") == "app.morphe.patcher.patch.loadPatchesFromJar"
             and report.get("executed_patch_names") == ["Premium unlock"], "wrong loader/patch selection")

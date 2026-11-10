@@ -9,7 +9,7 @@ python -I -B tools/plex-check/final_bundle.py check --jdk ABS_JDK21 --cache-root
 
 Use installed JDK21 and the pinned local dependency closure. Every output directory must be NEW and external to the checkout. There is no Gradle resolution, download, vendor APK signing, device operation or publication in this checker.
 
-`compile-only` compiles the tools-only adapter, not the patch definitions, and does not run final-MPP cases. `check` validates bundle metadata/version, the current three-patch catalog and the actual isolated loader result, then executes all **23 synthetic resource cases**. Plex's package-scoped version-unpinned `targets=[]` is intentional; finite Termius compatibility is preserved. Do not add source definitions or test JARs to the loader's parent classpath.
+`compile-only` compiles the tools-only adapter, not the patch definitions, and does not run final-MPP cases. `check` validates bundle metadata/version, the current four-patch catalog and the actual isolated loader result, then executes all **23 synthetic resource cases**. Only Plex is applied by this checker; Spotify is default-on and is not behaviorally tested here. Plex's package-scoped version-unpinned `targets=[]` is intentional; finite Termius compatibility and exact TV/APKM_REQUIRED Spotify compatibility are preserved. Do not add source definitions or test JARs to the loader's parent classpath.
 
 The cases cover Hermes comparison opcodes, moves, mixed pending edits, duplicate named functions, repeat application, malformed/wrong-version/signature rejection and manifest absence/binary/empty/decoded handling. Failed checks propagate failure and leave diagnostic outputs. Input-byte stability checks protect the selected MPP/catalog; they are not whole-source-tree attestations.
 
